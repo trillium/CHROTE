@@ -276,4 +276,18 @@ func (tp *TerminalProxy) proxyWebSocket(w http.ResponseWriter, r *http.Request) 
 // RegisterRoutes registers the terminal proxy route
 func (tp *TerminalProxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("/terminal/", tp.Handler())
+	// Also handle /ws directly for ttyd WebSocket connections
+	mux.Handle("/ws", tp.wsHandler())
+}
+
+// wsHandler returns an http.Handler specifically for /ws WebSocket connections
+func (tp *TerminalProxy) wsHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Direct WebSocket proxy to ttyd without path modification
+		if strings.EqualFold(r.Header.Get("Upgrade"), "websocket") {
+			tp.proxyWebSocket(w, r)
+			return
+		}
+		http.Error(w, "WebSocket upgrade required", http.StatusBadRequest)
+	})
 }
