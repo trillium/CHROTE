@@ -1,56 +1,60 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSession } from '../context/SessionContext'
 import { useToast } from '../context/ToastContext'
-import '../styles/compose-panel.css'
 
 function ComposePanel() {
-  const { composeSession, closeComposePanel, sessions } = useSession()
+  const { composeTarget, closeComposePanel } = useSession()
   const { addToast } = useToast()
   const [text, setText] = useState('')
-  const [sendEnter, setSendEnter] = useState(true)
   const [sending, setSending] = useState(false)
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
+  const [positioned, setPositioned] = useState(false)
   const dragOffset = useRef({ x: 0, y: 0 })
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
-  const [initialized, setInitialized] = useState(false)
 
-  // Center panel on open
+  // Reset text and position when target changes
   useEffect(() => {
-    if (composeSession && !initialized) {
-      const w = Math.min(420, window.innerWidth - 32)
+    if (composeTarget) {
+      setText('')
+      setPositioned(false)
+    }
+  }, [composeTarget])
+
+  // Position panel after it renders so we can measure it
+  useEffect(() => {
+    if (composeTarget && !positioned && panelRef.current) {
+      const panel = panelRef.current
+      const rect = panel.getBoundingClientRect()
       setPosition({
-        x: Math.max(16, (window.innerWidth - w) / 2),
-        y: Math.max(60, window.innerHeight * 0.15),
+        x: Math.max(0, (window.innerWidth - rect.width) / 2),
+        y: Math.max(0, window.innerHeight - rect.height - 20),
       })
-      setInitialized(true)
+      setPositioned(true)
     }
-    if (!composeSession) {
-      setInitialized(false)
-    }
-  }, [composeSession, initialized])
+  }, [composeTarget, positioned])
 
   // Focus textarea when panel opens
   useEffect(() => {
-    if (composeSession && textareaRef.current) {
-      // Small delay to ensure panel is rendered
-      const t = setTimeout(() => textareaRef.current?.focus(), 100)
-      return () => clearTimeout(t)
+    if (composeTarget && positioned) {
+      // Short delay to ensure the panel is positioned before focusing
+      const id = setTimeout(() => textareaRef.current?.focus(), 100)
+      return () => clearTimeout(id)
     }
-  }, [composeSession])
+  }, [composeTarget, positioned])
 
   // Dragging handlers
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+  const handleMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.compose-close')) return
     setIsDragging(true)
     dragOffset.current = {
       x: e.clientX - position.x,
       y: e.clientY - position.y,
     }
-  }, [position])
+  }
 
-  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+  const handleTouchStart = (e: React.TouchEvent) => {
     if ((e.target as HTMLElement).closest('.compose-close')) return
     const touch = e.touches[0]
     setIsDragging(true)
@@ -58,7 +62,7 @@ function ComposePanel() {
       x: touch.clientX - position.x,
       y: touch.clientY - position.y,
     }
-  }, [position])
+  }
 
   useEffect(() => {
     if (!isDragging) return
@@ -82,7 +86,7 @@ function ComposePanel() {
 
     document.addEventListener('mousemove', handleMouseMove)
     document.addEventListener('mouseup', handleEnd)
-    document.addEventListener('touchmove', handleTouchMove, { passive: true })
+    document.addEventListener('touchmove', handleTouchMove)
     document.addEventListener('touchend', handleEnd)
 
     return () => {
@@ -94,34 +98,31 @@ function ComposePanel() {
   }, [isDragging])
 
   const handleSend = useCallback(async () => {
-    if (!composeSession || !text.trim() || sending) return
+    if (!composeTarget || !text.trim() || sending) return
 
     setSending(true)
     try {
-      const response = await fetch('/api/tmux/send-text', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          session: composeSession,
-          text: text,
-          enter: sendEnter,
-        }),
-      })
-
+      const response = await fetch(
+        `/api/tmux/sessions/${encodeURIComponent(composeTarget)}/send-keys`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: text }),
+        }
+      )
       if (response.ok) {
         setText('')
-        addToast(`Sent to ${composeSession}`, 'success')
+        addToast('Text sent', 'success')
       } else {
-        const data = await response.json()
-        const msg = data?.error?.message || 'Send failed'
-        addToast(msg, 'error')
+        const data = await response.json().catch(() => ({}))
+        addToast(data.message || 'Failed to send text', 'error')
       }
     } catch {
-      addToast('Network error', 'error')
+      addToast('Failed to send text', 'error')
     } finally {
       setSending(false)
     }
-  }, [composeSession, text, sendEnter, sending, addToast])
+  }, [composeTarget, text, sending, addToast])
 
   // Ctrl+Enter or Cmd+Enter to send
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -129,81 +130,57 @@ function ComposePanel() {
       e.preventDefault()
       handleSend()
     }
-    if (e.key === 'Escape') {
-      e.preventDefault()
-      closeComposePanel()
-    }
-  }, [handleSend, closeComposePanel])
+  }, [handleSend])
 
-  if (!composeSession) return null
+  if (!composeTarget) return null
 
-  // Check if target session exists
-  const sessionExists = sessions.some(s => s.name === composeSession)
-
-  // Display name
-  const displayName = composeSession.includes('-')
-    ? composeSession.split('-').slice(-1)[0]
-    : composeSession
+  // Extract display name
+  const displayName = composeTarget.includes('-')
+    ? composeTarget.split('-').slice(-1)[0]
+    : composeTarget
 
   return (
-    <div className="compose-overlay" onClick={closeComposePanel}>
+    <div
+      ref={panelRef}
+      className="compose-panel"
+      style={{
+        left: position.x,
+        top: position.y,
+        visibility: positioned ? 'visible' : 'hidden',
+      }}
+    >
       <div
-        ref={panelRef}
-        className="compose-panel"
-        style={{ left: position.x, top: position.y }}
-        onClick={e => e.stopPropagation()}
+        className="compose-header"
+        onMouseDown={handleMouseDown}
+        onTouchStart={handleTouchStart}
       >
-        <div
-          className="compose-header"
-          onMouseDown={handleMouseDown}
-          onTouchStart={handleTouchStart}
+        <span className="compose-title">Compose → {displayName}</span>
+        <button className="compose-close" onClick={closeComposePanel}>×</button>
+      </div>
+      <div className="compose-body">
+        <textarea
+          ref={textareaRef}
+          className="compose-textarea"
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="Type or dictate here... text is NOT sent until you tap Send"
+          autoComplete="off"
+          autoCorrect="on"
+          spellCheck={true}
+        />
+      </div>
+      <div className="compose-footer">
+        <span className="compose-hint">
+          {text.length > 0 ? `${text.length} chars` : 'Ctrl+Enter to send'}
+        </span>
+        <button
+          className="compose-send-btn"
+          onClick={handleSend}
+          disabled={!text.trim() || sending}
         >
-          <span className="compose-title">
-            Compose &rarr; {displayName}
-          </span>
-          <div className="compose-header-controls">
-            {!sessionExists && <span className="compose-warn">session gone</span>}
-            <button className="compose-close" onClick={closeComposePanel}>&times;</button>
-          </div>
-        </div>
-
-        <div className="compose-body">
-          <textarea
-            ref={textareaRef}
-            className="compose-textarea"
-            value={text}
-            onChange={e => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Type or dictate your message..."
-            rows={5}
-            disabled={sending}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            data-form-type="other"
-            data-lpignore="true"
-          />
-
-          <div className="compose-footer">
-            <label className="compose-enter-toggle">
-              <input
-                type="checkbox"
-                checked={sendEnter}
-                onChange={e => setSendEnter(e.target.checked)}
-              />
-              <span>Send Enter</span>
-            </label>
-
-            <button
-              className="compose-send-btn"
-              onClick={handleSend}
-              disabled={!text.trim() || sending || !sessionExists}
-            >
-              {sending ? 'Sending...' : 'Send'}
-            </button>
-          </div>
-        </div>
+          {sending ? 'Sending...' : 'Send'}
+        </button>
       </div>
     </div>
   )
