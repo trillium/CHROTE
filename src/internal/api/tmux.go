@@ -47,6 +47,13 @@ type RenameSessionRequest struct {
 	NewName string `json:"newName"`
 }
 
+// SendTextRequest is the request body for sending composed text to a session
+type SendTextRequest struct {
+	Session string `json:"session"`
+	Text    string `json:"text"`
+	Enter   bool   `json:"enter"`
+}
+
 // AppearanceRequest is the request body for tmux appearance settings
 type AppearanceRequest struct {
 	StatusBg           string `json:"statusBg"`
@@ -75,6 +82,7 @@ func (h *TmuxHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/tmux/sessions/{name}", h.DeleteSession)
 	mux.HandleFunc("PATCH /api/tmux/sessions/{name}", h.RenameSession)
 	mux.HandleFunc("POST /api/tmux/appearance", h.ApplyAppearance)
+	mux.HandleFunc("POST /api/tmux/send-text", h.SendText)
 }
 
 // runTmux executes a tmux command with proper environment
@@ -342,6 +350,56 @@ func (h *TmuxHandler) RenameSession(w http.ResponseWriter, r *http.Request) {
 		"success":   true,
 		"oldName":   oldName,
 		"newName":   req.NewName,
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// SendText handles POST /api/tmux/send-text
+// Sends composed text to a tmux session as literal keystrokes
+func (h *TmuxHandler) SendText(w http.ResponseWriter, r *http.Request) {
+	var req SendTextRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
+		return
+	}
+
+	valid, errMsg := core.ValidateSessionName(req.Session, "session")
+	if !valid {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", errMsg)
+		return
+	}
+
+	if len(req.Text) == 0 {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "text is required")
+		return
+	}
+
+	if len(req.Text) > 10000 {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "text too long (max 10000 characters)")
+		return
+	}
+
+	// Send text literally (no key name interpretation)
+	_, err := h.runTmux("send-keys", "-l", "-t", req.Session, req.Text)
+	if err != nil {
+		core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
+		return
+	}
+
+	// Optionally send Enter key
+	if req.Enter {
+		_, err = h.runTmux("send-keys", "-t", req.Session, "Enter")
+		if err != nil {
+			core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", "Text sent but Enter failed: "+err.Error())
+			return
+		}
+	}
+
+	core.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"session":   req.Session,
+		"length":    len(req.Text),
+		"enter":     req.Enter,
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }
