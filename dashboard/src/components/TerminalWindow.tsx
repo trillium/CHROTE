@@ -149,6 +149,7 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
     removeSessionFromWindow,
     setActiveSession,
     cycleSession,
+    openComposePanel,
     settings,
     focusedWindowKey,
     setFocusedWindowKey,
@@ -355,6 +356,15 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
         </div>
 
         <div className="window-controls">
+          {hasSessions && activeSession && (
+            <button
+              className="compose-btn"
+              onClick={() => openComposePanel(activeSession)}
+              title="Compose text for this session"
+            >
+              ✎
+            </button>
+          )}
           {hasSessions && windowConfig.boundSessions.length > 1 && (
             <>
               <button

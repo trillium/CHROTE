@@ -47,6 +47,11 @@ type RenameSessionRequest struct {
 	NewName string `json:"newName"`
 }
 
+// SendKeysRequest is the request body for sending text to a session
+type SendKeysRequest struct {
+	Text string `json:"text"`
+}
+
 // AppearanceRequest is the request body for tmux appearance settings
 type AppearanceRequest struct {
 	StatusBg           string `json:"statusBg"`
@@ -75,6 +80,7 @@ func (h *TmuxHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/tmux/sessions/{name}", h.DeleteSession)
 	mux.HandleFunc("PATCH /api/tmux/sessions/{name}", h.RenameSession)
 	mux.HandleFunc("POST /api/tmux/appearance", h.ApplyAppearance)
+	mux.HandleFunc("POST /api/tmux/sessions/{name}/send-keys", h.SendKeys)
 }
 
 // runTmux executes a tmux command with proper environment
@@ -399,6 +405,56 @@ func (h *TmuxHandler) ApplyAppearance(w http.ResponseWriter, r *http.Request) {
 		"success":   true,
 		"applied":   applied,
 		"total":     len(commands),
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// SendKeys handles POST /api/tmux/sessions/{name}/send-keys
+// Sends composed text to a tmux session as literal keystrokes.
+// Newlines in the text are sent as Enter keys.
+func (h *TmuxHandler) SendKeys(w http.ResponseWriter, r *http.Request) {
+	sessionName := r.PathValue("name")
+
+	valid, errMsg := core.ValidateSessionName(sessionName, "session name")
+	if !valid {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", errMsg)
+		return
+	}
+
+	var req SendKeysRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
+		return
+	}
+
+	if req.Text == "" {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "text is required")
+		return
+	}
+
+	// Split on newlines and send each line with literal mode,
+	// inserting Enter between lines.
+	lines := strings.Split(req.Text, "\n")
+	for i, line := range lines {
+		if line != "" {
+			if _, err := h.runTmux("send-keys", "-t", sessionName, "-l", "--", line); err != nil {
+				core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
+				return
+			}
+		}
+		// Send Enter after each line except the last
+		if i < len(lines)-1 {
+			if _, err := h.runTmux("send-keys", "-t", sessionName, "Enter"); err != nil {
+				core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
+				return
+			}
+		}
+	}
+
+	core.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"session":   sessionName,
+		"length":    len(req.Text),
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }

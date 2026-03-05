@@ -122,6 +122,7 @@ export interface DashboardState {
   // UI state
   sidebarCollapsed: boolean
   floatingSession: string | null // Session shown in floating modal
+  composeTarget: string | null // Session targeted by compose panel
   isDragging: boolean // True when a session is being dragged
 
   // Computed: which sessions are assigned to any window
@@ -149,6 +150,8 @@ export interface DashboardActions {
   toggleSidebar: () => void
   openFloatingModal: (sessionName: string) => void
   closeFloatingModal: () => void
+  openComposePanel: (sessionName: string) => void
+  closeComposePanel: () => void
 
   // Session click handler
   handleSessionClick: (sessionName: string) => void
