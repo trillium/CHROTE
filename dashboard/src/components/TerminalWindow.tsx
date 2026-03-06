@@ -317,7 +317,7 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
               onClick={() => openComposePanel(activeSession)}
               title="Compose text for this session"
             >
-              ✎
+              ✎ Type
             </button>
           )}
           {hasSessions && windowConfig.boundSessions.length > 1 && (
