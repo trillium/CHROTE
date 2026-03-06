@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { DndContext, DragEndEvent, DragStartEvent, DragOverlay, useSensor, useSensors, PointerSensor } from '@dnd-kit/core'
 import { SessionProvider, useSession } from './context/SessionContext'
+import { ToastProvider } from './context/ToastContext'
 import TabBar, { Tab } from './components/TabBar'
 import SessionPanel from './components/SessionPanel'
 import TerminalArea from './components/TerminalArea'
@@ -14,6 +15,7 @@ import ManualView from './components/ManualView'
 import ChroteChat from './components/ChroteChat'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ToastContainer } from './components/ToastNotification'
+import ComposePage from './components/ComposePage'
 import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay'
 import LayoutPresetsPanel from './components/LayoutPresetsPanel'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -33,7 +35,14 @@ function DashboardContent() {
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
-  const { addSessionToWindow, removeSessionFromWindow, setIsDragging, isDragging, settings } = useSession()
+  const { addSessionToWindow, removeSessionFromWindow, setIsDragging, isDragging, settings, openComposePanel } = useSession()
+
+  // Auto-open compose panel if ?compose=<session> is in the URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const session = params.get('compose')
+    if (session) openComposePanel(session)
+  }, [openComposePanel])
 
   const handleShowHelp = useCallback(() => setShowHelp(true), [])
   const handleCloseHelp = useCallback(() => setShowHelp(false), [])
@@ -160,6 +169,13 @@ function DashboardContent() {
 }
 
 function App() {
+  if (window.location.pathname === '/compose') {
+    return (
+      <ToastProvider>
+        <ComposePage />
+      </ToastProvider>
+    )
+  }
   return (
     <SessionProvider>
       <DashboardContent />

@@ -1,5 +1,5 @@
 /* Chrote Dashboard - Compose Panel Styles */
-/* Floating text composition panel for voice-to-text input */
+/* Docked voice-to-text composition panel */
 
 .compose-panel {
   position: fixed;
@@ -15,6 +15,24 @@
   border-radius: 4px;
 }
 
+/* Docked to top, full-width, semi-transparent */
+.compose-panel.compose-docked {
+  top: 0;
+  left: 0;
+  right: 0;
+  width: 100%;
+  border-radius: 0;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  opacity: 0.5;
+  transition: opacity 0.2s ease;
+}
+
+.compose-panel.compose-docked.compose-focused {
+  opacity: 0.9;
+}
+
 .compose-header {
   display: flex;
   justify-content: space-between;
@@ -22,10 +40,8 @@
   padding: 8px 12px;
   background-color: var(--surface-secondary);
   border-bottom: 1px solid var(--divider);
-  cursor: move;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: none;
 }
 
 .compose-title {
@@ -127,33 +143,29 @@
 
 /* Compose trigger button in terminal window header */
 .compose-btn {
-  background: transparent;
-  border: 1px solid var(--divider);
-  color: var(--text-dim);
+  background: var(--accent);
+  border: none;
+  color: #000;
   cursor: pointer;
-  padding: 2px 6px;
-  font-size: 13px;
+  padding: 4px 10px;
+  font-size: 14px;
+  font-weight: 700;
+  border-radius: 4px;
   transition: all 0.15s ease;
   line-height: 1;
+  letter-spacing: 0.01em;
 }
 
 .compose-btn:hover {
-  color: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-bright, #5ff);
+  color: #000;
 }
 
-/* Mobile responsive */
 @media (max-width: 768px) {
-  .compose-panel {
-    width: calc(100vw - 16px);
-    left: 8px !important;
-    bottom: 8px;
-    max-height: 45vh;
-    border-radius: 8px;
-  }
-
-  .compose-textarea {
-    min-height: 80px;
+  .compose-btn {
+    padding: 8px 16px;
+    font-size: 18px;
+    border-radius: 6px;
   }
 
   .compose-send-btn {

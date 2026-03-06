@@ -2,103 +2,43 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSession } from '../context/SessionContext'
 import { useToast } from '../context/ToastContext'
 
+const TRIGGER_RE = /\b(bravely|gravely)\b/i
+const TRIGGER_DEBOUNCE_MS = 600
+
 function ComposePanel() {
   const { composeTarget, closeComposePanel } = useSession()
   const { addToast } = useToast()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  const [position, setPosition] = useState({ x: 0, y: 0 })
-  const [isDragging, setIsDragging] = useState(false)
-  const [positioned, setPositioned] = useState(false)
-  const dragOffset = useRef({ x: 0, y: 0 })
+  const [focused, setFocused] = useState(false)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const panelRef = useRef<HTMLDivElement>(null)
+  const triggerTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Reset text and position when target changes
+  // Reset text when target changes
   useEffect(() => {
     if (composeTarget) {
       setText('')
-      setPositioned(false)
     }
   }, [composeTarget])
 
-  // Position panel after it renders so we can measure it
-  useEffect(() => {
-    if (composeTarget && !positioned && panelRef.current) {
-      const panel = panelRef.current
-      const rect = panel.getBoundingClientRect()
-      setPosition({
-        x: Math.max(0, (window.innerWidth - rect.width) / 2),
-        y: Math.max(0, window.innerHeight - rect.height - 20),
-      })
-      setPositioned(true)
-    }
-  }, [composeTarget, positioned])
-
   // Focus textarea when panel opens
   useEffect(() => {
-    if (composeTarget && positioned) {
-      // Short delay to ensure the panel is positioned before focusing
+    if (composeTarget) {
       const id = setTimeout(() => textareaRef.current?.focus(), 100)
       return () => clearTimeout(id)
     }
-  }, [composeTarget, positioned])
-
-  // Dragging handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.compose-close')) return
-    setIsDragging(true)
-    dragOffset.current = {
-      x: e.clientX - position.x,
-      y: e.clientY - position.y,
-    }
-  }
-
-  const handleTouchStart = (e: React.TouchEvent) => {
-    if ((e.target as HTMLElement).closest('.compose-close')) return
-    const touch = e.touches[0]
-    setIsDragging(true)
-    dragOffset.current = {
-      x: touch.clientX - position.x,
-      y: touch.clientY - position.y,
-    }
-  }
-
-  useEffect(() => {
-    if (!isDragging) return
-
-    const handleMouseMove = (e: MouseEvent) => {
-      setPosition({
-        x: e.clientX - dragOffset.current.x,
-        y: e.clientY - dragOffset.current.y,
-      })
-    }
-
-    const handleTouchMove = (e: TouchEvent) => {
-      const touch = e.touches[0]
-      setPosition({
-        x: touch.clientX - dragOffset.current.x,
-        y: touch.clientY - dragOffset.current.y,
-      })
-    }
-
-    const handleEnd = () => setIsDragging(false)
-
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleEnd)
-    document.addEventListener('touchmove', handleTouchMove)
-    document.addEventListener('touchend', handleEnd)
-
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleEnd)
-      document.removeEventListener('touchmove', handleTouchMove)
-      document.removeEventListener('touchend', handleEnd)
-    }
-  }, [isDragging])
+  }, [composeTarget])
 
   const handleSend = useCallback(async () => {
     if (!composeTarget || !text.trim() || sending) return
+
+    // Strip trigger words; append newline so backend sends final Enter
+    const hasTrigger = TRIGGER_RE.test(text)
+    const sendText = hasTrigger
+      ? text.replace(/\b(bravely|gravely)\b/gi, '').trim() + '\n'
+      : text
+
+    if (!sendText.trim() && !hasTrigger) return
 
     setSending(true)
     try {
@@ -107,7 +47,7 @@ function ComposePanel() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: text }),
+          body: JSON.stringify({ text: sendText }),
         }
       )
       if (response.ok) {
@@ -124,6 +64,20 @@ function ComposePanel() {
     }
   }, [composeTarget, text, sending, addToast])
 
+  // Auto-detect trigger words in real-time
+  useEffect(() => {
+    if (triggerTimer.current) clearTimeout(triggerTimer.current)
+    if (!text || !TRIGGER_RE.test(text)) return
+
+    triggerTimer.current = setTimeout(() => {
+      handleSend()
+    }, TRIGGER_DEBOUNCE_MS)
+
+    return () => {
+      if (triggerTimer.current) clearTimeout(triggerTimer.current)
+    }
+  }, [text, handleSend])
+
   // Ctrl+Enter or Cmd+Enter to send
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -134,26 +88,15 @@ function ComposePanel() {
 
   if (!composeTarget) return null
 
-  // Extract display name
   const displayName = composeTarget.includes('-')
     ? composeTarget.split('-').slice(-1)[0]
     : composeTarget
 
   return (
     <div
-      ref={panelRef}
-      className="compose-panel"
-      style={{
-        left: position.x,
-        top: position.y,
-        visibility: positioned ? 'visible' : 'hidden',
-      }}
+      className={`compose-panel compose-docked ${focused ? 'compose-focused' : ''}`}
     >
-      <div
-        className="compose-header"
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-      >
+      <div className="compose-header">
         <span className="compose-title">Compose → {displayName}</span>
         <button className="compose-close" onClick={closeComposePanel}>×</button>
       </div>
@@ -164,7 +107,9 @@ function ComposePanel() {
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type or dictate here... text is NOT sent until you tap Send"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          placeholder='Dictate here... say "bravely" to send'
           autoComplete="off"
           autoCorrect="on"
           spellCheck={true}
@@ -172,7 +117,7 @@ function ComposePanel() {
       </div>
       <div className="compose-footer">
         <span className="compose-hint">
-          {text.length > 0 ? `${text.length} chars` : 'Ctrl+Enter to send'}
+          {text.length > 0 ? `${text.length} chars` : 'Say "bravely" or tap Send'}
         </span>
         <button
           className="compose-send-btn"
