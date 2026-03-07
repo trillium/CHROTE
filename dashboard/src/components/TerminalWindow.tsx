@@ -177,7 +177,8 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
     return () => {
       cleanups.forEach(fn => fn())
     }
-  }, [windowConfig.boundSessions, pool])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.claimIframe is a stable ref
+  }, [windowConfig.boundSessions])
 
   // Manage visibility of claimed iframes based on active session
   useEffect(() => {
@@ -190,21 +191,24 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
       iframe.style.width = '100%'
       iframe.style.height = '100%'
     })
-  }, [activeSession, windowConfig.boundSessions, pool])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.getIframe is a stable ref
+  }, [activeSession, windowConfig.boundSessions])
 
   // Trigger fit when active session changes
   useEffect(() => {
     if (activeSession && pool.isLoaded(activeSession)) {
       setTimeout(() => pool.triggerFit(activeSession), 50)
     }
-  }, [activeSession, pool])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool functions are stable refs
+  }, [activeSession])
 
   // Focus iframe when this window is focused
   useEffect(() => {
     if (isFocused && activeSession) {
       pool.focusIframe(activeSession)
     }
-  }, [isFocused, activeSession, pool])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.focusIframe is a stable ref
+  }, [isFocused, activeSession])
 
   // Handle click on this window to focus it for keyboard navigation
   const handleWindowClick = useCallback(() => {
@@ -261,7 +265,8 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
       clearTimeout(timeoutId)
       observer.disconnect()
     }
-  }, [pool])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.triggerFit is a stable ref
+  }, [])
 
   const colorTheme = WINDOW_COLORS[windowConfig.colorIndex % WINDOW_COLORS.length]
 

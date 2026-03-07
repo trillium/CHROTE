@@ -116,9 +116,11 @@ export function IframePoolProvider({ children }: { children: ReactNode }) {
 
       iframeRefs.current.set(sessionName, iframe)
 
-      // If already claimed, put it in the container; otherwise in the pool
+      // If already claimed, put it in the container with visible styles; otherwise hide in pool
       const claimContainer = claimsRef.current.get(sessionName)
       if (claimContainer) {
+        iframe.style.position = ''
+        iframe.style.visibility = ''
         claimContainer.appendChild(iframe)
       } else {
         pool.appendChild(iframe)
@@ -175,7 +177,12 @@ export function IframePoolProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  const isLoaded = useCallback((sessionName: string) => loadedSessions.has(sessionName), [loadedSessions])
+  // Use ref for isLoaded to keep a stable function identity.
+  // This prevents the context value from changing every time an iframe loads,
+  // which would cause all consumers to re-render unnecessarily.
+  const loadedSessionsRef = useRef(loadedSessions)
+  useEffect(() => { loadedSessionsRef.current = loadedSessions }, [loadedSessions])
+  const isLoaded = useCallback((sessionName: string) => loadedSessionsRef.current.has(sessionName), [])
 
   const getIframe = useCallback((sessionName: string) => iframeRefs.current.get(sessionName) ?? null, [])
 
