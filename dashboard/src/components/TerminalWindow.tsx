@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useDroppable, useDraggable } from '@dnd-kit/core'
 import { useSession } from '../context/SessionContext'
 import { useToast } from '../context/ToastContext'
+import { useIframePool } from './IframePool'
 import { WINDOW_COLORS } from '../types'
 import type { TerminalWindow as TerminalWindowType, WorkspaceId } from '../types'
 
@@ -138,18 +139,15 @@ interface TerminalWindowProps {
 }
 
 function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false, style }: TerminalWindowProps) {
-  // Track loaded state per session
-  const [loadedSessions, setLoadedSessions] = useState<Set<string>>(new Set())
-  // Store refs for all iframes by session name
-  const iframeRefs = useRef<Map<string, HTMLIFrameElement>>(new Map())
   const bodyRef = useRef<HTMLDivElement>(null)
   const windowRef = useRef<HTMLDivElement>(null)
+
+  const pool = useIframePool()
 
   const {
     removeSessionFromWindow,
     setActiveSession,
     cycleSession,
-    settings,
     focusedWindowKey,
     setFocusedWindowKey,
   } = useSession()
@@ -160,103 +158,57 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
 
   const activeSession = windowConfig.activeSession
 
-  // Check if active session is loaded
-  const activeSessionLoaded = activeSession ? loadedSessions.has(activeSession) : false
+  // Check if active session is loaded via pool
+  const activeSessionLoaded = activeSession ? pool.isLoaded(activeSession) : false
 
-  // Trigger xterm fit() by dispatching resize event to the active iframe
-  const triggerFit = useCallback(() => {
-    if (!activeSession) return
-    try {
-      const iframe = iframeRefs.current.get(activeSession)
-      if (!iframe?.contentWindow) return
-      // Dispatch resize event - ttyd listens for this and calls fit()
-      iframe.contentWindow.dispatchEvent(new Event('resize'))
-    } catch {
-      // Cross-origin or not ready - ignore
+  // Claim/release iframes from the pool as boundSessions change
+  useEffect(() => {
+    const body = bodyRef.current
+    if (!body) return
+
+    const cleanups: (() => void)[] = []
+    windowConfig.boundSessions.forEach(sessionName => {
+      if (sessionName && sessionName !== 'INIT-PENDING') {
+        const cleanup = pool.claimIframe(sessionName, body)
+        cleanups.push(cleanup)
+      }
+    })
+
+    return () => {
+      cleanups.forEach(fn => fn())
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.claimIframe is a stable ref
+  }, [windowConfig.boundSessions])
+
+  // Manage visibility of claimed iframes based on active session
+  useEffect(() => {
+    windowConfig.boundSessions.forEach(sessionName => {
+      const iframe = pool.getIframe(sessionName)
+      if (!iframe) return
+      const isActive = sessionName === activeSession
+      iframe.style.display = isActive ? 'block' : 'none'
+      iframe.style.position = isActive ? 'relative' : 'absolute'
+      iframe.style.width = '100%'
+      iframe.style.height = '100%'
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.getIframe is a stable ref
+  }, [activeSession, windowConfig.boundSessions])
+
+  // Trigger fit when active session changes
+  useEffect(() => {
+    if (activeSession && pool.isLoaded(activeSession)) {
+      setTimeout(() => pool.triggerFit(activeSession), 50)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool functions are stable refs
   }, [activeSession])
 
-  // Apply font size to a specific iframe
-  const applyFontSizeToIframe = useCallback((iframe: HTMLIFrameElement, fontSize: number) => {
-    if (!iframe?.contentWindow) return
-
-    let attempts = 0
-    const maxAttempts = 20 // 20 * 50ms = 1 second max wait
-
-    const tryApply = () => {
-      try {
-        const iframeWindow = iframe.contentWindow as Window & { term?: { options: { fontSize: number } } }
-        if (iframeWindow.term) {
-          iframeWindow.term.options.fontSize = fontSize
-          return // Success - stop polling
-        }
-      } catch {
-        // Cross-origin or not ready - continue polling
-      }
-
-      attempts++
-      if (attempts < maxAttempts) {
-        setTimeout(tryApply, 50) // Poll every 50ms
-      }
-    }
-
-    tryApply()
-  }, [])
-
-  // Handle iframe load for a specific session
-  const handleIframeLoad = useCallback((sessionName: string) => {
-    setLoadedSessions(prev => new Set(prev).add(sessionName))
-    const iframe = iframeRefs.current.get(sessionName)
-    if (iframe) {
-      applyFontSizeToIframe(iframe, settings.fontSize)
-      // Trigger fit after delays to ensure container has settled
-      setTimeout(() => {
-        if (sessionName === windowConfig.activeSession) {
-          triggerFit()
-        }
-      }, 100)
-      setTimeout(() => {
-        if (sessionName === windowConfig.activeSession) {
-          triggerFit()
-        }
-      }, 300)
-    }
-  }, [applyFontSizeToIframe, settings.fontSize, triggerFit, windowConfig.activeSession])
-
-  // Apply font size when setting changes (for all loaded iframes)
+  // Focus iframe when this window is focused
   useEffect(() => {
-    loadedSessions.forEach(sessionName => {
-      const iframe = iframeRefs.current.get(sessionName)
-      if (iframe) {
-        applyFontSizeToIframe(iframe, settings.fontSize)
-      }
-    })
-  }, [settings.fontSize, loadedSessions, applyFontSizeToIframe])
-
-  // Trigger fit when active session changes (switching to already-loaded session)
-  useEffect(() => {
-    if (activeSession && loadedSessions.has(activeSession)) {
-      setTimeout(triggerFit, 50)
+    if (isFocused && activeSession) {
+      pool.focusIframe(activeSession)
     }
-  }, [activeSession, loadedSessions, triggerFit])
-
-  // Clean up refs for removed sessions
-  useEffect(() => {
-    const currentSessions = new Set(windowConfig.boundSessions)
-    iframeRefs.current.forEach((_, sessionName) => {
-      if (!currentSessions.has(sessionName)) {
-        iframeRefs.current.delete(sessionName)
-      }
-    })
-    // Also clean up loaded state
-    setLoadedSessions(prev => {
-      const newSet = new Set<string>()
-      prev.forEach(s => {
-        if (currentSessions.has(s)) newSet.add(s)
-      })
-      return newSet
-    })
-  }, [windowConfig.boundSessions])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.focusIframe is a stable ref
+  }, [isFocused, activeSession])
 
   // Handle click on this window to focus it for keyboard navigation
   const handleWindowClick = useCallback(() => {
@@ -291,6 +243,10 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [workspaceId, windowConfig.id, cycleSession])
 
+  // Store activeSession in ref for ResizeObserver callback
+  const activeSessionRef = useRef(activeSession)
+  useEffect(() => { activeSessionRef.current = activeSession }, [activeSession])
+
   // ResizeObserver to trigger fit() when container size changes
   useEffect(() => {
     const body = bodyRef.current
@@ -299,8 +255,9 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
     let timeoutId: ReturnType<typeof setTimeout>
     const observer = new ResizeObserver(() => {
       clearTimeout(timeoutId)
-      // Debounce to wait for CSS transitions to complete
-      timeoutId = setTimeout(triggerFit, 100)
+      timeoutId = setTimeout(() => {
+        if (activeSessionRef.current) pool.triggerFit(activeSessionRef.current)
+      }, 100)
     })
 
     observer.observe(body)
@@ -308,7 +265,8 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
       clearTimeout(timeoutId)
       observer.disconnect()
     }
-  }, [triggerFit])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.triggerFit is a stable ref
+  }, [])
 
   const colorTheme = WINDOW_COLORS[windowConfig.colorIndex % WINDOW_COLORS.length]
 
@@ -321,10 +279,6 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
   }
 
   const hasSessions = windowConfig.boundSessions.length > 0
-
-  // Helper to generate terminal URL for a session
-  const getTerminalUrl = (sessionName: string) =>
-    `/terminal/?arg=${encodeURIComponent(sessionName)}&theme=${encodeURIComponent('{"background":"transparent"}')}`
 
   return (
     <div
@@ -389,39 +343,12 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
             <span>Initializing Session...</span>
           </div>
         ) : !hasSessions ? (
-          /* Empty window - show create button */
           <div className="empty-window-state">
             <CreateSessionButton workspaceId={workspaceId} windowId={windowConfig.id} accentColor={colorTheme.accent} />
             <span className="empty-window-hint">or drag a session here</span>
           </div>
-        ) : (
-          /* Render persistent iframes for all bound sessions, toggle visibility */
-          windowConfig.boundSessions.map(sessionName => {
-            const isActive = sessionName === activeSession
-            return (
-              <iframe
-                key={sessionName}
-                ref={(el) => {
-                  if (el) {
-                    iframeRefs.current.set(sessionName, el)
-                  }
-                }}
-                src={getTerminalUrl(sessionName)}
-                onLoad={() => handleIframeLoad(sessionName)}
-                allow="clipboard-read; clipboard-write"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  display: isActive ? 'block' : 'none',
-                  position: isActive ? 'relative' : 'absolute',
-                }}
-                title={`Terminal ${windowConfig.id} - ${sessionName}`}
-              />
-            )
-          })
-        )}
+        ) : null}
+        {/* Iframes are injected here by the IframePool via DOM manipulation */}
         <DropOverlay workspaceId={workspaceId} windowId={windowConfig.id} isVisible={isDragging} />
       </div>
     </div>

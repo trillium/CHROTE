@@ -15,6 +15,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { ToastContainer } from './components/ToastNotification'
 import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay'
 import LayoutPresetsPanel from './components/LayoutPresetsPanel'
+import { IframePoolProvider } from './components/IframePool'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
 // Dragged item overlay component
@@ -118,12 +119,16 @@ function DashboardContent() {
         />
 
         <div className="dashboard-content">
-          {(activeTab === 'terminal1' || activeTab === 'terminal2') && (
-            <>
-              <SessionPanel />
-              <TerminalArea workspaceId={activeTab} />
-            </>
-          )}
+          {/* Terminal areas are always rendered (hidden via CSS) to preserve iframe connections */}
+          <div style={{ display: (activeTab === 'terminal1' || activeTab === 'terminal2') ? 'contents' : 'none' }}>
+            <SessionPanel />
+          </div>
+          <div style={{ display: activeTab === 'terminal1' ? 'contents' : 'none' }}>
+            <TerminalArea workspaceId="terminal1" />
+          </div>
+          <div style={{ display: activeTab === 'terminal2' ? 'contents' : 'none' }}>
+            <TerminalArea workspaceId="terminal2" />
+          </div>
           {activeTab === 'files' && <FilesView />}
           {activeTab === 'beads_viewer' && (
             <ErrorBoundary>
@@ -160,7 +165,9 @@ function DashboardContent() {
 function App() {
   return (
     <SessionProvider>
-      <DashboardContent />
+      <IframePoolProvider>
+        <DashboardContent />
+      </IframePoolProvider>
     </SessionProvider>
   )
 }
