@@ -130,119 +130,42 @@ function SessionTag({ sessionName, isActive, workspaceId, windowId, onRemove, on
   )
 }
 
-// Touch scroll overlay for mobile - translates swipes to xterm.js scroll commands
-function MobileTouchScrollOverlay({ iframeRefs, activeSession }: {
-  iframeRefs: React.MutableRefObject<Map<string, HTMLIFrameElement>>
-  activeSession: string | null
-}) {
-  const overlayRef = useRef<HTMLDivElement>(null)
+// Floating scroll buttons - uses tmux copy-mode via API
+function ScrollButtons({ activeSession }: { activeSession: string | null }) {
+  const [inScrollMode, setInScrollMode] = useState(false)
 
-  useEffect(() => {
-    const overlay = overlayRef.current
-    if (!overlay || !activeSession) return
-
-    let startY = 0
-    let startX = 0
-    let scrollAccum = 0
-    let isSwiping = false
-    let tapRestoreTimer: ReturnType<typeof setTimeout> | null = null
-    const LINE_HEIGHT = 18
-
-    const getTerminal = () => {
-      const iframe = iframeRefs.current.get(activeSession)
-      if (!iframe?.contentWindow) return null
-      try {
-        const win = iframe.contentWindow as Window & { term?: { scrollLines: (n: number) => void } }
-        return win.term || null
-      } catch {
-        return null
+  const scroll = async (direction: 'up' | 'down' | 'exit', amount = 'page') => {
+    if (!activeSession) return
+    try {
+      await fetch(`/api/tmux/sessions/${encodeURIComponent(activeSession)}/scroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction, amount }),
+      })
+      if (direction === 'exit') {
+        setInScrollMode(false)
+      } else {
+        setInScrollMode(true)
       }
-    }
-
-    const onTouchStart = (e: TouchEvent) => {
-      // Re-enable overlay if it was disabled by a previous tap
-      if (tapRestoreTimer) {
-        clearTimeout(tapRestoreTimer)
-        tapRestoreTimer = null
-      }
-      overlay.style.pointerEvents = 'auto'
-
-      const touch = e.touches[0]
-      startY = touch.clientY
-      startX = touch.clientX
-      scrollAccum = 0
-      isSwiping = false
-    }
-
-    const onTouchMove = (e: TouchEvent) => {
-      const touch = e.touches[0]
-      const dx = Math.abs(touch.clientX - startX)
-      const dy = touch.clientY - startY
-
-      // Lock into swiping mode once vertical movement exceeds threshold
-      if (!isSwiping && Math.abs(dy) > 10 && Math.abs(dy) > dx) {
-        isSwiping = true
-      }
-
-      if (!isSwiping) return
-
-      e.preventDefault()
-      const delta = startY - touch.clientY
-      startY = touch.clientY
-      scrollAccum += delta
-
-      const lines = Math.trunc(scrollAccum / LINE_HEIGHT)
-      if (lines !== 0) {
-        const term = getTerminal()
-        if (term) term.scrollLines(lines)
-        scrollAccum -= lines * LINE_HEIGHT
-      }
-    }
-
-    const onTouchEnd = () => {
-      if (!isSwiping) {
-        // Tap — briefly disable overlay so the tap reaches the iframe
-        overlay.style.pointerEvents = 'none'
-        tapRestoreTimer = setTimeout(() => {
-          overlay.style.pointerEvents = 'auto'
-          tapRestoreTimer = null
-        }, 400)
-      }
-      isSwiping = false
-    }
-
-    overlay.addEventListener('touchstart', onTouchStart, { passive: true })
-    overlay.addEventListener('touchmove', onTouchMove, { passive: false })
-    overlay.addEventListener('touchend', onTouchEnd, { passive: true })
-
-    return () => {
-      if (tapRestoreTimer) clearTimeout(tapRestoreTimer)
-      overlay.removeEventListener('touchstart', onTouchStart)
-      overlay.removeEventListener('touchmove', onTouchMove)
-      overlay.removeEventListener('touchend', onTouchEnd)
-    }
-  }, [activeSession, iframeRefs])
-
-  // Only render on touch-capable devices
-  if (typeof window !== 'undefined' && !('ontouchstart' in window) && navigator.maxTouchPoints === 0) {
-    return null
+    } catch { /* ignore */ }
   }
 
+  if (!activeSession) return null
+
   return (
-    <div
-      ref={overlayRef}
-      className="mobile-touch-scroll-overlay"
-      style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 5,
-        touchAction: 'none',
-        background: 'transparent',
-      }}
-    />
+    <div className="scroll-buttons">
+      {inScrollMode && (
+        <button className="scroll-btn scroll-btn-exit" onClick={() => scroll('exit')} title="Exit scroll mode">
+          <span>&#10005;</span>
+        </button>
+      )}
+      <button className="scroll-btn" onClick={() => scroll('up', 'page')} title="Page Up">
+        <span>&#9650;</span>
+      </button>
+      <button className="scroll-btn" onClick={() => scroll('down', 'page')} title="Page Down">
+        <span>&#9660;</span>
+      </button>
+    </div>
   )
 }
 
@@ -539,7 +462,7 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
           })
         )}
         {hasSessions && activeSession && activeSession !== 'INIT-PENDING' && (
-          <MobileTouchScrollOverlay iframeRefs={iframeRefs} activeSession={activeSession} />
+          <ScrollButtons activeSession={activeSession} />
         )}
         <DropOverlay workspaceId={workspaceId} windowId={windowConfig.id} isVisible={isDragging} />
       </div>
