@@ -131,6 +131,45 @@ function SessionTag({ sessionName, isActive, workspaceId, windowId, onRemove, on
   )
 }
 
+// Floating scroll buttons - uses tmux copy-mode via API
+function ScrollButtons({ activeSession }: { activeSession: string | null }) {
+  const [inScrollMode, setInScrollMode] = useState(false)
+
+  const scroll = async (direction: 'up' | 'down' | 'exit', amount = 'page') => {
+    if (!activeSession) return
+    try {
+      await fetch(`/api/tmux/sessions/${encodeURIComponent(activeSession)}/scroll`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ direction, amount }),
+      })
+      if (direction === 'exit') {
+        setInScrollMode(false)
+      } else {
+        setInScrollMode(true)
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!activeSession) return null
+
+  return (
+    <div className="scroll-buttons">
+      <button className="scroll-btn" onClick={() => scroll('up', 'page')} title="Page Up">
+        <span>&#9650;</span>
+      </button>
+      <button className="scroll-btn" onClick={() => scroll('down', 'page')} title="Page Down">
+        <span>&#9660;</span>
+      </button>
+      {inScrollMode && (
+        <button className="scroll-btn scroll-btn-exit" onClick={() => scroll('exit')} title="Exit scroll mode">
+          <span>&#10005;</span>
+        </button>
+      )}
+    </div>
+  )
+}
+
 interface TerminalWindowProps {
   workspaceId: WorkspaceId
   window: TerminalWindowType
@@ -211,6 +250,31 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.focusIframe is a stable ref
   }, [isFocused, activeSession])
+
+  // Auto-reconnect: poll iframes for ttyd's "press enter to reconnect" overlay
+  // and automatically trigger reconnection
+  useEffect(() => {
+    const interval = setInterval(() => {
+      iframeRefs.current.forEach((iframe) => {
+        try {
+          const doc = iframe.contentDocument || iframe.contentWindow?.document
+          if (!doc) return
+          // ttyd shows an overlay div with class "xterm-overlay" containing reconnect text
+          const overlay = doc.querySelector('.xterm-overlay') as HTMLElement
+          if (overlay && overlay.style.display !== 'none' && overlay.textContent?.includes('reconnect')) {
+            // Simulate Enter keypress to trigger reconnection
+            const event = new KeyboardEvent('keydown', { key: 'Enter', keyCode: 13, bubbles: true })
+            doc.dispatchEvent(event)
+            // Also try clicking the overlay itself
+            overlay.click()
+          }
+        } catch {
+          // Cross-origin — can't access iframe content, ignore
+        }
+      })
+    }, 2000)
+    return () => clearInterval(interval)
+  }, [])
 
   // Handle click on this window to focus it for keyboard navigation
   const handleWindowClick = useCallback(() => {
@@ -360,6 +424,9 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
           </div>
         ) : null}
         {/* Iframes are injected here by the IframePool via DOM manipulation */}
+        {hasSessions && activeSession && activeSession !== 'INIT-PENDING' && (
+          <ScrollButtons activeSession={activeSession} />
+        )}
         <DropOverlay workspaceId={workspaceId} windowId={windowConfig.id} isVisible={isDragging} />
       </div>
     </div>
