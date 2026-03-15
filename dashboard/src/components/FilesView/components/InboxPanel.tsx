@@ -324,6 +324,12 @@ export function InboxPanel({ onError }: InboxPanelProps) {
           onChange={(e) => setNote(e.target.value)}
           disabled={sending}
           rows={2}
+          autoComplete="off"
+          autoCorrect="off"
+          autoCapitalize="off"
+          spellCheck={false}
+          data-form-type="other"
+          data-lpignore="true"
         />
         <div className="inbox-actions">
           {items.length > 0 && (

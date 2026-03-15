@@ -647,6 +647,12 @@ export default function ChroteChat() {
                   placeholder={selectedConvo?.workspace ? "Type a message... (Enter to send)" : "Messaging unavailable"}
                   rows={1}
                   disabled={sending || !selectedConvo?.workspace}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-lpignore="true"
                 />
                 <button
                   className="chat-nudge-btn"
