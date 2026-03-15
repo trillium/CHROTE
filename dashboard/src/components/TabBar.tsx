@@ -1,6 +1,7 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import MusicPlayer from './MusicPlayer'
 import { useMediaQuery } from '../hooks/useMediaQuery'
+import { useToast } from '../context/ToastContext'
 
 export type Tab = 'terminal1' | 'terminal2' | 'files' | 'beads_viewer' | 'chat' | 'manual' | 'settings' | 'help'
 
@@ -30,9 +31,29 @@ interface TabBarProps {
 function TabBar({ activeTab, onTabChange, onShowHelp, onShowPresets, onCollapse }: TabBarProps) {
   const [helpMenuOpen, setHelpMenuOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [restarting, setRestarting] = useState(false)
   const helpMenuRef = useRef<HTMLDivElement>(null)
-  
+  const { addToast } = useToast()
+
   const isMobile = useMediaQuery('(max-width: 768px)')
+
+  const handleRestartTerminal = useCallback(async () => {
+    if (restarting) return
+    setRestarting(true)
+    try {
+      const response = await fetch('/api/terminal/restart', { method: 'POST' })
+      if (response.ok) {
+        addToast('Terminal restarted', 'success')
+      } else {
+        const data = await response.json().catch(() => null)
+        addToast(data?.error?.message || 'Failed to restart terminal', 'error')
+      }
+    } catch {
+      addToast('Failed to restart terminal', 'error')
+    } finally {
+      setRestarting(false)
+    }
+  }, [restarting, addToast])
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -108,6 +129,14 @@ function TabBar({ activeTab, onTabChange, onShowHelp, onShowPresets, onCollapse 
                 ▾
               </button>
             )}
+            <button
+              className={`tab ${restarting ? 'restarting' : ''}`}
+              onClick={handleRestartTerminal}
+              disabled={restarting}
+              title="Restart terminal (ttyd)"
+            >
+              {restarting ? 'Restarting...' : 'Restart Terminal'}
+            </button>
             <div className="help-menu-container" ref={helpMenuRef}>
               <button
                 className={`tab ${helpMenuOpen ? 'active' : ''}`}
