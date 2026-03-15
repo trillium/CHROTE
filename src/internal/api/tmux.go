@@ -386,11 +386,17 @@ func (h *TmuxHandler) SendText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Optionally send Enter key
+	// Optionally send Enter key (two presses with delay for Claude Code submission)
 	if req.Enter {
 		_, err = h.runTmux("send-keys", "-t", req.Session, "Enter")
 		if err != nil {
 			core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", "Text sent but Enter failed: "+err.Error())
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+		_, err = h.runTmux("send-keys", "-t", req.Session, "Enter")
+		if err != nil {
+			core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", "Text sent but second Enter failed: "+err.Error())
 			return
 		}
 	}
