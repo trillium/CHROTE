@@ -5,7 +5,7 @@ interface SpecialKeysBarProps {
 }
 
 function SpecialKeysBar({ activeSession }: SpecialKeysBarProps) {
-  const [expanded, setExpanded] = useState(true)
+  const [open, setOpen] = useState(false)
   const [ctrlActive, setCtrlActive] = useState(false)
 
   const sendKeys = async (keys: string) => {
@@ -31,36 +31,43 @@ function SpecialKeysBar({ activeSession }: SpecialKeysBarProps) {
   if (!activeSession) return null
 
   return (
-    <div className="special-keys-bar">
+    <>
       <button
-        className="special-keys-toggle"
-        onClick={() => setExpanded(!expanded)}
-        title={expanded ? 'Hide keys' : 'Show keys'}
+        className="special-keys-fab"
+        onClick={() => setOpen(!open)}
       >
-        {expanded ? '⌨▾' : '⌨▸'}
+        ⌨
       </button>
-      {expanded && (
+      {open && (
         <>
-          <button className="special-key-btn" onClick={() => sendKeys('Escape')}>Esc</button>
-          <button className="special-key-btn" onClick={() => sendKeys('Tab')}>Tab</button>
-          <button
-            className={`special-key-btn ${ctrlActive ? 'modifier-active' : ''}`}
-            onClick={() => setCtrlActive(!ctrlActive)}
-          >
-            Ctrl
-          </button>
-          <button className="special-key-btn" onClick={() => handleKey('c')}>C</button>
-          <button className="special-key-btn" onClick={() => handleKey('d')}>D</button>
-          <button className="special-key-btn" onClick={() => handleKey('z')}>Z</button>
-          <button className="special-key-btn" onClick={() => handleKey('l')}>L</button>
-          <button className="special-key-btn" onClick={() => sendKeys('Up')}>↑</button>
-          <button className="special-key-btn" onClick={() => sendKeys('Down')}>↓</button>
-          <button className="special-key-btn" onClick={() => sendKeys('Left')}>←</button>
-          <button className="special-key-btn" onClick={() => sendKeys('Right')}>→</button>
-          <button className="special-key-btn" onClick={() => sendKeys('Enter')}>⏎</button>
+          <div className="special-keys-overlay" onClick={() => { setOpen(false); setCtrlActive(false) }} />
+          <div className="special-keys-modal">
+            <div className="special-keys-grid">
+              <button className="special-key-btn" onClick={() => sendKeys('Escape')}>Esc</button>
+              <button className="special-key-btn" onClick={() => sendKeys('Tab')}>Tab</button>
+              <button className="special-key-btn" onClick={() => sendKeys('Enter')}>Enter</button>
+              <button
+                className={`special-key-btn ${ctrlActive ? 'modifier-active' : ''}`}
+                onClick={() => setCtrlActive(!ctrlActive)}
+              >
+                Ctrl
+              </button>
+              <button className="special-key-btn" onClick={() => handleKey('c')}>C</button>
+              <button className="special-key-btn" onClick={() => handleKey('d')}>D</button>
+              <button className="special-key-btn" onClick={() => handleKey('z')}>Z</button>
+              <button className="special-key-btn" onClick={() => handleKey('l')}>L</button>
+              <button className="special-key-btn" onClick={() => handleKey('a')}>A</button>
+              <button className="special-key-btn" onClick={() => sendKeys('Up')}>↑</button>
+              <button className="special-key-btn" onClick={() => sendKeys('Down')}>↓</button>
+              <button className="special-key-btn" onClick={() => sendKeys('Left')}>←</button>
+              <button className="special-key-btn" onClick={() => sendKeys('Right')}>→</button>
+              <button className="special-key-btn" onClick={() => sendKeys('BSpace')}>⌫</button>
+              <button className="special-key-btn" onClick={() => sendKeys('Space')}>␣</button>
+            </div>
+          </div>
         </>
       )}
-    </div>
+    </>
   )
 }
 
