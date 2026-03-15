@@ -135,6 +135,13 @@ function ComposePanel() {
     }
   }, [handleSend, closeComposePanel])
 
+  // Close handler that prevents mobile click-through (ghost clicks)
+  const handleClose = useCallback((e: React.MouseEvent | React.TouchEvent) => {
+    e.stopPropagation()
+    e.preventDefault()
+    closeComposePanel()
+  }, [closeComposePanel])
+
   if (!composeSession) return null
 
   // Check if target session exists
@@ -146,12 +153,17 @@ function ComposePanel() {
     : composeSession
 
   return (
-    <div className="compose-overlay" onClick={closeComposePanel}>
+    <div
+      className="compose-overlay"
+      onClick={handleClose}
+      onTouchEnd={handleClose}
+    >
       <div
         ref={panelRef}
         className="compose-panel"
         style={{ left: position.x, top: position.y }}
         onClick={e => e.stopPropagation()}
+        onTouchEnd={e => e.stopPropagation()}
       >
         <div
           className="compose-header"
@@ -163,7 +175,13 @@ function ComposePanel() {
           </span>
           <div className="compose-header-controls">
             {!sessionExists && <span className="compose-warn">session gone</span>}
-            <button className="compose-close" onClick={closeComposePanel}>&times;</button>
+            <button
+              className="compose-close"
+              onClick={handleClose}
+              onTouchEnd={handleClose}
+            >
+              &times;
+            </button>
           </div>
         </div>
 
