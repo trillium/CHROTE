@@ -215,3 +215,6 @@ export function getGroupPriority(group: string): number {
   if (group.startsWith('gt-')) return 3 // Rigs after main
   return 99
 }
+
+// Session aliases: maps session name to list of aliases
+export type SessionAliases = Record<string, string[]>

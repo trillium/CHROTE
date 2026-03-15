@@ -192,3 +192,15 @@
   transform: scale(0.95);
   opacity: 0.8;
 }
+
+/* Voice routing indicator - shows when text will be routed to a different session */
+.compose-route-indicator {
+  color: var(--accent);
+  font-weight: bold;
+  animation: route-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes route-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.6; }
+}

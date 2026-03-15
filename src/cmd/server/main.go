@@ -82,6 +82,9 @@ func main() {
 	chatHandler := api.NewChatHandler()
 	chatHandler.RegisterRoutes(mux)
 
+	aliasesHandler := api.NewAliasesHandler()
+	aliasesHandler.RegisterRoutes(mux)
+
 	// Create terminal proxy
 	terminalProxy := proxy.NewTerminalProxy(config.TtydPort)
 	terminalProxy.RegisterRoutes(mux)

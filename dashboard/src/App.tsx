@@ -12,6 +12,7 @@ import HelpView from './components/HelpView'
 import BeadsViewerTab from './components/BeadsViewerTab'
 import ManualView from './components/ManualView'
 import ChroteChat from './components/ChroteChat'
+import AliasesView from './components/AliasesView'
 import ErrorBoundary from './components/ErrorBoundary'
 import { ToastContainer } from './components/ToastNotification'
 import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay'
@@ -136,6 +137,7 @@ function DashboardContent() {
               <ChroteChat />
             </ErrorBoundary>
           )}
+          {activeTab === 'aliases' && <AliasesView />}
           {activeTab === 'manual' && <ManualView />}
           {activeTab === 'settings' && <SettingsView />}
           {activeTab === 'help' && <HelpView />}

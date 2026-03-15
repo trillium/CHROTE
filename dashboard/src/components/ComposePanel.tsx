@@ -1,7 +1,55 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { useSession } from '../context/SessionContext'
 import { useToast } from '../context/ToastContext'
+import type { SessionAliases } from '../types'
 import '../styles/compose-panel.css'
+
+// Resolve voice routing: check if the first word matches a session name or alias
+function resolveRoute(
+  text: string,
+  sessions: { name: string }[],
+  aliases: SessionAliases,
+): { targetSession: string | null; remainingText: string } {
+  const trimmed = text.trim()
+  if (!trimmed) return { targetSession: null, remainingText: trimmed }
+
+  // Extract the first word
+  const spaceIdx = trimmed.indexOf(' ')
+  if (spaceIdx === -1) {
+    // Single word — no routing prefix, send as-is
+    return { targetSession: null, remainingText: trimmed }
+  }
+
+  const firstWord = trimmed.substring(0, spaceIdx).toLowerCase()
+  const rest = trimmed.substring(spaceIdx + 1)
+
+  // Check session names (case-insensitive, match against display name or full name)
+  for (const s of sessions) {
+    // Match against full session name
+    if (s.name.toLowerCase() === firstWord) {
+      return { targetSession: s.name, remainingText: rest }
+    }
+    // Match against display name (last segment after dash)
+    const displayName = s.name.includes('-') ? s.name.split('-').slice(-1)[0] : s.name
+    if (displayName.toLowerCase() === firstWord) {
+      return { targetSession: s.name, remainingText: rest }
+    }
+  }
+
+  // Check aliases (case-insensitive)
+  for (const [sessionName, aliasList] of Object.entries(aliases)) {
+    for (const alias of aliasList) {
+      if (alias.toLowerCase() === firstWord) {
+        // Verify session still exists
+        if (sessions.some(s => s.name === sessionName)) {
+          return { targetSession: sessionName, remainingText: rest }
+        }
+      }
+    }
+  }
+
+  return { targetSession: null, remainingText: trimmed }
+}
 
 function ComposePanel() {
   const { composeSession, closeComposePanel, sessions } = useSession()
@@ -15,6 +63,29 @@ function ComposePanel() {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const panelRef = useRef<HTMLDivElement>(null)
   const [initialized, setInitialized] = useState(false)
+  const [aliases, setAliases] = useState<SessionAliases>({})
+
+  // Fetch aliases when panel opens
+  useEffect(() => {
+    if (!composeSession) return
+    fetch('/api/aliases')
+      .then(res => res.json())
+      .then(data => {
+        if (data.aliases) setAliases(data.aliases)
+      })
+      .catch(() => {}) // Silently fail — routing just won't match aliases
+  }, [composeSession])
+
+  // Compute route preview based on current text
+  const routePreview = useMemo(() => {
+    if (!text.trim()) return null
+    const { targetSession } = resolveRoute(text, sessions, aliases)
+    if (!targetSession || targetSession === composeSession) return null
+    const displayName = targetSession.includes('-')
+      ? targetSession.split('-').slice(-1)[0]
+      : targetSession
+    return displayName
+  }, [text, sessions, aliases, composeSession])
 
   // Center panel on open
   useEffect(() => {
@@ -34,7 +105,6 @@ function ComposePanel() {
   // Focus textarea when panel opens
   useEffect(() => {
     if (composeSession && textareaRef.current) {
-      // Small delay to ensure panel is rendered
       const t = setTimeout(() => textareaRef.current?.focus(), 100)
       return () => clearTimeout(t)
     }
@@ -96,21 +166,40 @@ function ComposePanel() {
   const handleSend = useCallback(async () => {
     if (!composeSession || !text.trim() || sending) return
 
+    // Resolve voice routing
+    const { targetSession, remainingText } = resolveRoute(text, sessions, aliases)
+    const actualSession = targetSession || composeSession
+    const actualText = targetSession ? remainingText : text.trim()
+
+    if (!actualText) return
+
+    // Verify target session exists
+    if (!sessions.some(s => s.name === actualSession)) {
+      addToast(`Session "${actualSession}" not found`, 'error')
+      return
+    }
+
     setSending(true)
     try {
       const response = await fetch('/api/tmux/send-text', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session: composeSession,
-          text: text,
+          session: actualSession,
+          text: actualText,
           enter: sendEnter,
         }),
       })
 
       if (response.ok) {
         setText('')
-        addToast(`Sent to ${composeSession}`, 'success')
+        const displayTarget = actualSession.includes('-')
+          ? actualSession.split('-').slice(-1)[0]
+          : actualSession
+        const routed = targetSession && targetSession !== composeSession
+          ? ` (routed to ${displayTarget})`
+          : ''
+        addToast(`Sent to ${displayTarget}${routed}`, 'success')
       } else {
         const data = await response.json()
         const msg = data?.error?.message || 'Send failed'
@@ -121,7 +210,7 @@ function ComposePanel() {
     } finally {
       setSending(false)
     }
-  }, [composeSession, text, sendEnter, sending, addToast])
+  }, [composeSession, text, sendEnter, sending, sessions, aliases, addToast])
 
   // Ctrl+Enter or Cmd+Enter to send
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
@@ -159,7 +248,9 @@ function ComposePanel() {
           onTouchStart={handleTouchStart}
         >
           <span className="compose-title">
-            Compose &rarr; {displayName}
+            Compose &rarr; {routePreview ? (
+              <span className="compose-route-indicator">{routePreview}</span>
+            ) : displayName}
           </span>
           <div className="compose-header-controls">
             {!sessionExists && <span className="compose-warn">session gone</span>}
@@ -174,7 +265,7 @@ function ComposePanel() {
             value={text}
             onChange={e => setText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type or dictate your message..."
+            placeholder="Type or dictate... prefix with name to route"
             rows={5}
             disabled={sending}
           />

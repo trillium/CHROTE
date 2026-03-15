@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react'
 import MusicPlayer from './MusicPlayer'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 
-export type Tab = 'terminal1' | 'terminal2' | 'files' | 'beads_viewer' | 'chat' | 'manual' | 'settings' | 'help'
+export type Tab = 'terminal1' | 'terminal2' | 'files' | 'beads_viewer' | 'chat' | 'aliases' | 'manual' | 'settings' | 'help'
 
 interface InternalTab {
   id: Tab
@@ -60,6 +60,7 @@ function TabBar({ activeTab, onTabChange, onShowHelp, onShowPresets }: TabBarPro
     { id: 'terminal2', label: 'Terminal 2' },
     { id: 'files', label: 'Files' },
     { id: 'beads_viewer', label: 'Beads' },
+    { id: 'aliases', label: 'Aliases' },
     { id: 'settings', label: 'Settings' },
   ]
 
