@@ -52,6 +52,12 @@ type SendKeysRequest struct {
 	Text string `json:"text"`
 }
 
+// ScrollRequest is the request body for scrolling a session
+type ScrollRequest struct {
+	Direction string `json:"direction"` // "up" or "down"
+	Amount    string `json:"amount"`    // "page", "half", "line" (default: "page")
+}
+
 // AppearanceRequest is the request body for tmux appearance settings
 type AppearanceRequest struct {
 	StatusBg           string `json:"statusBg"`
@@ -81,6 +87,8 @@ func (h *TmuxHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PATCH /api/tmux/sessions/{name}", h.RenameSession)
 	mux.HandleFunc("POST /api/tmux/appearance", h.ApplyAppearance)
 	mux.HandleFunc("POST /api/tmux/sessions/{name}/send-keys", h.SendKeys)
+	mux.HandleFunc("POST /api/tmux/sessions/{name}/send-raw-key", h.SendRawKey)
+	mux.HandleFunc("POST /api/tmux/sessions/{name}/scroll", h.Scroll)
 }
 
 // runTmux executes a tmux command with proper environment
@@ -434,6 +442,7 @@ func (h *TmuxHandler) SendKeys(w http.ResponseWriter, r *http.Request) {
 
 	// Split on newlines and send each line with literal mode,
 	// inserting Enter between lines.
+	trailingNewline := strings.HasSuffix(req.Text, "\n")
 	lines := strings.Split(req.Text, "\n")
 	for i, line := range lines {
 		if line != "" {
@@ -450,11 +459,126 @@ func (h *TmuxHandler) SendKeys(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	// If the text ended with \n (e.g. trigger word), send a final Enter to submit
+	if trailingNewline {
+		if _, err := h.runTmux("send-keys", "-t", sessionName, "Enter"); err != nil {
+			core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
+			return
+		}
+	}
 
 	core.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"success":   true,
 		"session":   sessionName,
 		"length":    len(req.Text),
 		"timestamp": time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// SendRawKey handles POST /api/tmux/sessions/{name}/send-raw-key
+// Sends a tmux key name (e.g. Escape, Tab, C-c, Up) without literal mode.
+func (h *TmuxHandler) SendRawKey(w http.ResponseWriter, r *http.Request) {
+	sessionName := r.PathValue("name")
+
+	valid, errMsg := core.ValidateSessionName(sessionName, "session name")
+	if !valid {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", errMsg)
+		return
+	}
+
+	var req struct {
+		Keys string `json:"keys"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
+		return
+	}
+
+	if req.Keys == "" {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "keys is required")
+		return
+	}
+
+	if _, err := h.runTmux("send-keys", "-t", sessionName, req.Keys); err != nil {
+		core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
+		return
+	}
+
+	core.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"session": sessionName,
+		"keys":    req.Keys,
+	})
+}
+
+// Scroll handles POST /api/tmux/sessions/{name}/scroll
+// Enters copy-mode and scrolls up/down by page, half-page, or line.
+func (h *TmuxHandler) Scroll(w http.ResponseWriter, r *http.Request) {
+	sessionName := r.PathValue("name")
+
+	valid, errMsg := core.ValidateSessionName(sessionName, "session name")
+	if !valid {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", errMsg)
+		return
+	}
+
+	var req ScrollRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "Invalid JSON body")
+		return
+	}
+
+	if req.Direction != "up" && req.Direction != "down" && req.Direction != "exit" {
+		core.WriteError(w, http.StatusBadRequest, "BAD_REQUEST", "direction must be 'up', 'down', or 'exit'")
+		return
+	}
+
+	if req.Amount == "" {
+		req.Amount = "page"
+	}
+
+	// Exit copy-mode
+	if req.Direction == "exit" {
+		h.runTmux("send-keys", "-t", sessionName, "q")
+		core.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true})
+		return
+	}
+
+	// Enter copy-mode (idempotent — no-op if already in copy-mode)
+	h.runTmux("copy-mode", "-t", sessionName)
+
+	// Map direction+amount to tmux copy-mode command
+	var cmd string
+	switch req.Amount {
+	case "half":
+		if req.Direction == "up" {
+			cmd = "halfpage-up"
+		} else {
+			cmd = "halfpage-down"
+		}
+	case "line":
+		if req.Direction == "up" {
+			cmd = "scroll-up"
+		} else {
+			cmd = "scroll-down"
+		}
+	default: // "page"
+		if req.Direction == "up" {
+			cmd = "page-up"
+		} else {
+			cmd = "page-down"
+		}
+	}
+
+	if _, err := h.runTmux("send-keys", "-t", sessionName, "-X", cmd); err != nil {
+		core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
+		return
+	}
+
+	core.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"success":   true,
+		"session":   sessionName,
+		"direction": req.Direction,
+		"amount":    req.Amount,
 	})
 }

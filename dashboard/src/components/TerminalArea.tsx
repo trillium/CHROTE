@@ -39,52 +39,21 @@ function TerminalArea({ workspaceId }: TerminalAreaProps) {
 
   return (
     <div className="terminal-area">
-      <div className="terminal-area-controls">
-        {isMobile ? (
-          <>
-            <span className="layout-label">View:</span>
-            <div className="mobile-controls-row" style={{ display: 'flex', gap: '4px', alignItems: 'center', flex: 1, overflowX: 'auto' }}>
-              {Array.from({ length: windowCount }).map((_, idx) => (
-                <button
-                  key={`view-${idx}`}
-                  className={`layout-btn ${mobileActiveIndex === idx ? 'active' : ''}`}
-                  onClick={() => setMobileActiveIndex(idx)}
-                >
-                  {idx + 1}
-                </button>
-              ))}
-              
-              <div style={{ width: '1px', height: '16px', background: 'var(--divider)', margin: '0 8px' }}></div>
-              
-              <span className="layout-label">Count:</span>
-              {[1, 2, 3, 4].map(count => (
-                <button
-                  key={`count-${count}`}
-                  className={`layout-btn ${windowCount === count ? 'active' : ''}`}
-                  onClick={() => setWindowCount(workspaceId, count)}
-                  style={{ opacity: windowCount === count ? 1 : 0.7 }}
-                >
-                  {count}
-                </button>
-              ))}
-            </div>
-          </>
-        ) : (
-          <>
-            <span className="layout-label">Layout:</span>
-            {[1, 2, 3, 4].map(count => (
-              <button
-                key={count}
-                className={`layout-btn ${windowCount === count ? 'active' : ''}`}
-                onClick={() => setWindowCount(workspaceId, count)}
-                title={`${count} window${count > 1 ? 's' : ''}`}
-              >
-                {count}
-              </button>
-            ))}
-          </>
-        )}
-      </div>
+      {!isMobile && (
+        <div className="terminal-area-controls">
+          <span className="layout-label">Layout:</span>
+          {[1, 2, 3, 4].map(count => (
+            <button
+              key={count}
+              className={`layout-btn ${windowCount === count ? 'active' : ''}`}
+              onClick={() => setWindowCount(workspaceId, count)}
+              title={`${count} window${count > 1 ? 's' : ''}`}
+            >
+              {count}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className={`terminal-grid ${getGridClass()}`} data-workspace={workspaceId}>
         {windows.slice(0, windowCount).map((window, index) => {

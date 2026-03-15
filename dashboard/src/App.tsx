@@ -20,6 +20,8 @@ import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay'
 import LayoutPresetsPanel from './components/LayoutPresetsPanel'
 import { IframePoolProvider } from './components/IframePool'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { useMediaQuery } from './hooks/useMediaQuery'
+import SpecialKeysBar from './components/SpecialKeysBar'
 
 // Dragged item overlay component
 function DraggedSessionOverlay({ name }: { name: string }) {
@@ -36,7 +38,10 @@ function DashboardContent() {
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
-  const { addSessionToWindow, removeSessionFromWindow, setIsDragging, isDragging, settings, openComposePanel } = useSession()
+  const [navCollapsed, setNavCollapsed] = useState(false)
+  const { addSessionToWindow, removeSessionFromWindow, setIsDragging, isDragging, settings, openComposePanel, workspaces } = useSession()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const isMobile = useMediaQuery('(max-width: 768px)')
 
   // Auto-open compose panel if ?compose=<session> is in the URL
   useEffect(() => {
@@ -121,17 +126,70 @@ function DashboardContent() {
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       <div className={`dashboard ${isDragging ? 'is-dragging' : ''}`}>
-        <TabBar
-          activeTab={activeTab}
-          onTabChange={setActiveTab}
-          onShowHelp={handleShowHelp}
-          onShowPresets={handleShowPresets}
-        />
+        {isMobile ? (
+          <>
+            <button
+              className="mobile-fab"
+              onClick={() => setMobileMenuOpen(true)}
+            >
+              ⋯
+            </button>
+            {mobileMenuOpen && (
+              <>
+                <div className="mobile-menu-overlay" onClick={() => setMobileMenuOpen(false)} />
+                <div className="mobile-menu-panel">
+                  <div className="mobile-menu-header">
+                    <span style={{ color: 'var(--text-primary)', fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px' }}>Menu</span>
+                    <button className="mobile-menu-close" onClick={() => setMobileMenuOpen(false)}>×</button>
+                  </div>
+                  {[
+                    { id: 'terminal1' as Tab, label: 'Terminal' },
+                    { id: 'chat' as Tab, label: 'ChroteChat' },
+                    { id: 'files' as Tab, label: 'Files' },
+                    { id: 'beads_viewer' as Tab, label: 'Beads' },
+                    { id: 'settings' as Tab, label: 'Settings' },
+                  ].map(tab => (
+                    <button
+                      key={tab.id}
+                      className={`mobile-nav-item ${activeTab === tab.id ? 'active' : ''}`}
+                      onClick={() => { setActiveTab(tab.id); setMobileMenuOpen(false) }}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                  <div className="mobile-nav-divider" />
+                  <button className="mobile-nav-item" onClick={() => { handleShowHelp(); setMobileMenuOpen(false) }}>
+                    Keyboard Shortcuts
+                  </button>
+                  <button className="mobile-nav-item" onClick={() => { setActiveTab('help'); setMobileMenuOpen(false) }}>
+                    Help
+                  </button>
+                </div>
+              </>
+            )}
+          </>
+        ) : navCollapsed ? (
+          <button
+            className="nav-expand-btn"
+            onClick={() => setNavCollapsed(false)}
+            title="Show navigation"
+          >
+            ☰
+          </button>
+        ) : (
+          <TabBar
+            activeTab={activeTab}
+            onTabChange={setActiveTab}
+            onShowHelp={handleShowHelp}
+            onShowPresets={handleShowPresets}
+            onCollapse={() => setNavCollapsed(true)}
+          />
+        )}
 
         <div className="dashboard-content">
           {/* Terminal areas are always rendered (hidden via CSS) to preserve iframe connections */}
           <div style={{ display: (activeTab === 'terminal1' || activeTab === 'terminal2') ? 'contents' : 'none' }}>
-            <SessionPanel />
+            {!isMobile && <SessionPanel />}
           </div>
           <div style={{ display: activeTab === 'terminal1' ? 'contents' : 'none' }}>
             <TerminalArea workspaceId="terminal1" />
@@ -154,6 +212,13 @@ function DashboardContent() {
           {activeTab === 'settings' && <SettingsView />}
           {activeTab === 'help' && <HelpView />}
         </div>
+
+        {/* Special keys bar on mobile terminal view */}
+        {isMobile && (activeTab === 'terminal1' || activeTab === 'terminal2') && (
+          <SpecialKeysBar
+            activeSession={workspaces[activeTab]?.windows[0]?.activeSession ?? null}
+          />
+        )}
 
         <FloatingModal />
         <ComposePanel />
