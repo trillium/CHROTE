@@ -14,6 +14,21 @@
   width: 40px;
 }
 
+@media (max-width: 768px) {
+  .session-panel.collapsed {
+    width: 0;
+    border-right: none;
+    overflow: hidden;
+  }
+
+  .session-panel {
+    position: absolute;
+    z-index: 2000;
+    height: 100%;
+    box-shadow: 4px 0 12px rgba(0, 0, 0, 0.4);
+  }
+}
+
 .session-panel-header {
   display: flex;
   align-items: center;

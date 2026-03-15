@@ -24,9 +24,10 @@ interface TabBarProps {
   onTabChange: (tab: Tab) => void
   onShowHelp?: () => void
   onShowPresets?: () => void
+  onCollapse?: () => void
 }
 
-function TabBar({ activeTab, onTabChange, onShowHelp, onShowPresets }: TabBarProps) {
+function TabBar({ activeTab, onTabChange, onShowHelp, onShowPresets, onCollapse }: TabBarProps) {
   const [helpMenuOpen, setHelpMenuOpen] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const helpMenuRef = useRef<HTMLDivElement>(null)
@@ -72,81 +73,11 @@ function TabBar({ activeTab, onTabChange, onShowHelp, onShowPresets }: TabBarPro
     }
   }
 
-  const activeTabLabel = tabs.find(t => t.id === activeTab)?.label || 'Menu'
-
   return (
     <div className={`tab-bar ${isMobile ? 'mobile-mode' : ''}`}>
       {isMobile ? (
         <>
-          <div className="tab-bar-mobile-start">
-            <button 
-              className={`tab hamburger-btn ${mobileMenuOpen ? 'active' : ''}`}
-              onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            >
-              ☰
-            </button>
-            <span className="mobile-active-tab">{activeTabLabel}</span>
-          </div>
-
-          {/* Mobile Menu Dropdown */}
-          {mobileMenuOpen && (
-            <div className="mobile-nav-dropdown">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  className={`mobile-nav-item ${!tab.external && activeTab === tab.id ? 'active' : ''}`}
-                  onClick={() => handleClick(tab)}
-                >
-                  {tab.label}
-                </button>
-              ))}
-              
-              <div className="mobile-nav-divider"></div>
-              
-              {onShowPresets && (
-                <button
-                  className="mobile-nav-item"
-                  onClick={() => {
-                    onShowPresets()
-                    setMobileMenuOpen(false)
-                  }}
-                >
-                 ⊞ Layouts
-                </button>
-              )}
-              <button
-                className="mobile-nav-item"
-                onClick={() => {
-                  if (onShowHelp) onShowHelp()
-                  setMobileMenuOpen(false)
-                }}
-              >
-                Keyboard Shortcuts
-              </button>
-              <button
-                className="mobile-nav-item"
-                onClick={() => {
-                   onTabChange('help')
-                   setMobileMenuOpen(false)
-                }}
-              >
-                Dashboard Help
-              </button>
-               <button
-                className="mobile-nav-item"
-                onClick={() => {
-                   onTabChange('manual')
-                   setMobileMenuOpen(false)
-                }}
-              >
-                Gastown Operators Manual
-              </button>
-            </div>
-          )}
-          
-          <div className="tab-bar-actions">
-            <MusicPlayer />
-          </div>
+          {/* Mobile: floating menu button + slide-out panel (tab-bar itself is hidden via CSS) */}
         </>
       ) : (
         <>
@@ -170,6 +101,11 @@ function TabBar({ activeTab, onTabChange, onShowHelp, onShowPresets }: TabBarPro
                 title="Layout Presets"
               >
                 ⊞ Layouts
+              </button>
+            )}
+            {onCollapse && (
+              <button className="tab collapse-btn" onClick={onCollapse} title="Hide navigation bar">
+                ▾
               </button>
             )}
             <div className="help-menu-container" ref={helpMenuRef}>
