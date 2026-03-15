@@ -12,6 +12,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/chrote/server/internal/core"
@@ -164,6 +165,55 @@ func (tp *TerminalProxy) Stop() error {
 	return nil
 }
 
+// Restart stops and restarts the ttyd process
+func (tp *TerminalProxy) Restart() error {
+	tp.mu.Lock()
+
+	// Stop if running (inline to avoid double-lock)
+	if tp.running && tp.ttydCmd != nil && tp.ttydCmd.Process != nil {
+		log.Printf("Stopping ttyd for restart...")
+
+		// Try SIGTERM first
+		if err := tp.ttydCmd.Process.Signal(syscall.SIGTERM); err != nil {
+			tp.ttydCmd.Process.Kill()
+		}
+
+		// Wait with timeout
+		done := make(chan error, 1)
+		go func() {
+			done <- tp.ttydCmd.Wait()
+		}()
+
+		tp.mu.Unlock()
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		select {
+		case <-done:
+			// Exited gracefully
+		case <-ctx.Done():
+			// Force kill
+			tp.mu.Lock()
+			if tp.ttydCmd != nil && tp.ttydCmd.Process != nil {
+				tp.ttydCmd.Process.Kill()
+			}
+			tp.mu.Unlock()
+		}
+
+		tp.mu.Lock()
+		tp.running = false
+		tp.mu.Unlock()
+
+		// Brief pause before restart
+		time.Sleep(200 * time.Millisecond)
+	} else {
+		tp.mu.Unlock()
+	}
+
+	return tp.Start()
+}
+
 // IsRunning returns whether ttyd is running
 func (tp *TerminalProxy) IsRunning() bool {
 	tp.mu.Lock()
@@ -278,6 +328,27 @@ func (tp *TerminalProxy) RegisterRoutes(mux *http.ServeMux) {
 	mux.Handle("/terminal/", tp.Handler())
 	// Also handle /ws directly for ttyd WebSocket connections
 	mux.Handle("/ws", tp.wsHandler())
+
+	// API endpoint to restart ttyd
+	mux.HandleFunc("POST /api/terminal/restart", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Terminal restart requested")
+		if err := tp.Restart(); err != nil {
+			core.WriteError(w, http.StatusInternalServerError, "RESTART_FAILED", err.Error())
+			return
+		}
+		core.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"running": tp.IsRunning(),
+		})
+	})
+
+	// API endpoint to get terminal status
+	mux.HandleFunc("GET /api/terminal/status", func(w http.ResponseWriter, r *http.Request) {
+		core.WriteJSON(w, http.StatusOK, map[string]interface{}{
+			"running": tp.IsRunning(),
+			"port":    tp.ttydPort,
+		})
+	})
 }
 
 // wsHandler returns an http.Handler specifically for /ws WebSocket connections
