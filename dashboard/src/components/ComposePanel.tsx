@@ -177,6 +177,12 @@ function ComposePanel() {
             placeholder="Type or dictate your message..."
             rows={5}
             disabled={sending}
+            autoComplete="off"
+            autoCorrect="off"
+            autoCapitalize="off"
+            spellCheck={false}
+            data-form-type="other"
+            data-lpignore="true"
           />
 
           <div className="compose-footer">

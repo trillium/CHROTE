@@ -647,6 +647,12 @@ export default function ChroteChat() {
                   placeholder={selectedConvo?.workspace ? "Type a message... (Enter to send)" : "Messaging unavailable"}
                   rows={1}
                   disabled={sending || !selectedConvo?.workspace}
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-form-type="other"
+                  data-lpignore="true"
                 />
                 <button
                   className="chat-nudge-btn"
@@ -685,6 +691,8 @@ export default function ChroteChat() {
                   value={channelName}
                   onChange={e => setChannelName(e.target.value)}
                   placeholder="Channel Name"
+                  autoComplete="off"
+                  data-form-type="other"
                 />
                 <button onClick={handleCreateChannel}>Create</button>
               </div>
@@ -698,6 +706,8 @@ export default function ChroteChat() {
                 onChange={e => setInviteChannelName(e.target.value)}
                 placeholder="Channel Name to Invite To"
                 className="full-width"
+                autoComplete="off"
+                data-form-type="other"
               />
               <div className="agent-select-list">
                 {conversations.map(c => (
