@@ -132,10 +132,10 @@ func TestGetTmuxTmpdir(t *testing.T) {
 	original := os.Getenv("TMUX_TMPDIR")
 	defer os.Setenv("TMUX_TMPDIR", original)
 
-	// Test default
+	// Test default (chrote uses /run/tmux/chrote as dedicated socket directory)
 	os.Unsetenv("TMUX_TMPDIR")
-	if result := GetTmuxTmpdir(); result != "/tmp" {
-		t.Errorf("GetTmuxTmpdir() with no env = %q, expected /tmp", result)
+	if result := GetTmuxTmpdir(); result != "/run/tmux/chrote" {
+		t.Errorf("GetTmuxTmpdir() with no env = %q, expected /run/tmux/chrote", result)
 	}
 
 	// Test with custom value
@@ -150,10 +150,10 @@ func TestGetTmuxTmpdir(t *testing.T) {
 		t.Errorf("GetTmuxTmpdir() with whitespace = %q, expected /trimmed", result)
 	}
 
-	// Test empty string
+	// Test empty string (falls back to default socket directory)
 	os.Setenv("TMUX_TMPDIR", "")
-	if result := GetTmuxTmpdir(); result != "/tmp" {
-		t.Errorf("GetTmuxTmpdir() with empty string = %q, expected /tmp", result)
+	if result := GetTmuxTmpdir(); result != "/run/tmux/chrote" {
+		t.Errorf("GetTmuxTmpdir() with empty string = %q, expected /run/tmux/chrote", result)
 	}
 }
 
