@@ -146,7 +146,7 @@ function MobileTouchScrollOverlay({ iframeRefs, activeSession }: {
     let scrollAccum = 0
     let isSwiping = false
     let tapRestoreTimer: ReturnType<typeof setTimeout> | null = null
-    const LINE_HEIGHT = 18
+    const LINE_HEIGHT = 36
 
     const getTerminal = () => {
       const iframe = iframeRefs.current.get(activeSession)

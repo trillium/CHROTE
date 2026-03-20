@@ -1,6 +1,8 @@
 {
-  "database": "dolt",
   "backend": "dolt",
+  "database": "dolt",
+  "dolt_database": "rig",
   "dolt_mode": "server",
-  "dolt_database": "rig"
+  "dolt_server_host": "100.111.197.110",
+  "dolt_server_port": 3307
 }
