@@ -37,8 +37,6 @@ func TestHelperProcess(t *testing.T) {
 	cmd := args[0]
 	subCmd := args[1:]
 
-	fmt.Fprintf(os.Stderr, "DEBUG: cmd=%s subCmd=%v\n", cmd, subCmd)
-
 	if cmd == "tmux" {
 		// Mock tmux success for has-session/new-session checking
 		os.Exit(0)
@@ -50,11 +48,11 @@ func TestHelperProcess(t *testing.T) {
 	}
 
 	// Route based on subcommands
-	// gt mail channel list --json
+	// gt mail channel list --json — returns map[string]GtChannel
 	if contains(subCmd, "channel") && contains(subCmd, "list") && contains(subCmd, "--json") {
-		channels := []GtChannel{
-			{Name: "alerts", Status: "active", RetentionCount: 50, CreatedBy: "mayor"},
-			{Name: "random", Status: "active", RetentionCount: 0, CreatedBy: "witness"},
+		channels := map[string]GtChannel{
+			"alerts": {Name: "alerts", Status: "active", RetentionCount: 50, CreatedBy: "mayor"},
+			"random": {Name: "random", Status: "active", RetentionCount: 0, CreatedBy: "witness"},
 		}
 		b, _ := json.Marshal(channels)
 		os.Stdout.Write(b)
@@ -169,7 +167,7 @@ func TestListChannels(t *testing.T) {
 	}
 
 	if len(result.Data.Channels) != 2 {
-		t.Errorf("Expected 2 channels, got %d", len(result.Data.Channels))
+		t.Fatalf("Expected 2 channels, got %d", len(result.Data.Channels))
 	}
 	if result.Data.Channels[0].Name != "alerts" {
 		t.Errorf("Expected first channel 'alerts', got %q", result.Data.Channels[0].Name)
