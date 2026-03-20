@@ -155,17 +155,20 @@ function ScrollButtons({ activeSession }: { activeSession: string | null }) {
 
   return (
     <div className="scroll-buttons">
+      <button
+        className={`scroll-btn scroll-btn-exit${inScrollMode ? ' visible' : ''}`}
+        onClick={() => scroll('exit')}
+        title="Exit scroll mode"
+        aria-hidden={!inScrollMode}
+      >
+        <span>&#10005;</span>
+      </button>
       <button className="scroll-btn" onClick={() => scroll('up', 'page')} title="Page Up">
         <span>&#9650;</span>
       </button>
       <button className="scroll-btn" onClick={() => scroll('down', 'page')} title="Page Down">
         <span>&#9660;</span>
       </button>
-      {inScrollMode && (
-        <button className="scroll-btn scroll-btn-exit" onClick={() => scroll('exit')} title="Exit scroll mode">
-          <span>&#10005;</span>
-        </button>
-      )}
     </div>
   )
 }

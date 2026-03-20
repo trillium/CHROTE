@@ -338,6 +338,14 @@
 .scroll-btn-exit {
   background: rgba(180, 40, 40, 0.75);
   font-size: 13px;
+  opacity: 0;
+  pointer-events: none;
+  transition: background 0.15s, transform 0.1s, opacity 0.15s;
+}
+
+.scroll-btn-exit.visible {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .scroll-btn-exit:active {
