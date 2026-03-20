@@ -210,7 +210,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   )
   const [sidebarCollapsed, setSidebarCollapsed] = useState(stored?.sidebarCollapsed ?? false)
   const [floatingSession, setFloatingSession] = useState<string | null>(null)
-  const [composeSession, setComposeSession] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const [settings, setSettings] = useState<UserSettings>(stored?.settings ?? DEFAULT_SETTINGS)
   // Track which window has focus for keyboard navigation (workspaceId-windowId)
@@ -497,14 +496,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setFloatingSession(null)
   }, [])
 
-  const openComposePanel = useCallback((sessionName: string) => {
-    setComposeSession(sessionName)
-  }, [])
-
-  const closeComposePanel = useCallback(() => {
-    setComposeSession(null)
-  }, [])
-
   const handleSessionClick = useCallback((sessionName: string) => {
     // Check if session is already assigned to any window
     const assignment = assignedSessions.get(sessionName)
@@ -641,7 +632,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     workspaces,
     sidebarCollapsed,
     floatingSession,
-    composeSession,
     assignedSessions,
     isDragging,
     settings,
@@ -657,8 +647,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     toggleSidebar,
     openFloatingModal,
     closeFloatingModal,
-    openComposePanel,
-    closeComposePanel,
     handleSessionClick,
     refreshSessions,
     deleteSession,
@@ -678,7 +666,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     workspaces,
     sidebarCollapsed,
     floatingSession,
-    composeSession,
     assignedSessions,
     isDragging,
     settings,
@@ -692,8 +679,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     toggleSidebar,
     openFloatingModal,
     closeFloatingModal,
-    openComposePanel,
-    closeComposePanel,
     handleSessionClick,
     refreshSessions,
     deleteSession,

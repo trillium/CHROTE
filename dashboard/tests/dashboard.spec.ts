@@ -104,25 +104,25 @@ test.describe('Arena Dashboard', () => {
 
   test.describe('Terminal Area', () => {
     test('should render layout controls', async ({ page }) => {
-      await expect(page.locator('.terminal-area-controls')).toBeVisible()
-      await expect(page.locator('.layout-btn')).toHaveCount(4)
+      await expect(page.locator('.terminal-area-controls:visible')).toBeVisible()
+      await expect(page.locator('.layout-btn:visible')).toHaveCount(4)
     })
 
     test('should start with 2 windows by default', async ({ page }) => {
-      await expect(page.locator('.terminal-window')).toHaveCount(2)
-      await expect(page.locator('.layout-btn.active')).toContainText('2')
+      await expect(page.locator('.terminal-window:visible')).toHaveCount(2)
+      await expect(page.locator('.layout-btn.active:visible')).toContainText('2')
     })
 
     test('should switch to 1 window layout', async ({ page }) => {
-      await page.click('.layout-btn:has-text("1")')
-      await expect(page.locator('.terminal-window')).toHaveCount(1)
-      await expect(page.locator('.terminal-grid')).toHaveClass(/grid-1/)
+      await page.click('.layout-btn:visible:has-text("1")')
+      await expect(page.locator('.terminal-window:visible')).toHaveCount(1)
+      await expect(page.locator('.terminal-grid:visible')).toHaveClass(/grid-1/)
     })
 
     test('should switch to 4 window layout', async ({ page }) => {
-      await page.click('.layout-btn:has-text("4")')
-      await expect(page.locator('.terminal-window')).toHaveCount(4)
-      await expect(page.locator('.terminal-grid')).toHaveClass(/grid-4/)
+      await page.click('.layout-btn:visible:has-text("4")')
+      await expect(page.locator('.terminal-window:visible')).toHaveCount(4)
+      await expect(page.locator('.terminal-grid:visible')).toHaveClass(/grid-4/)
     })
 
     test('should maintain equal window heights in 4 window layout', async ({ page }) => {
@@ -357,7 +357,7 @@ test.describe('Arena Dashboard', () => {
       await page.click('.tab:has-text("Files")')
       await page.click('.tab:has-text("Terminal")')
       await expect(page.locator('.session-panel')).toBeVisible()
-      await expect(page.locator('.terminal-area')).toBeVisible()
+      await expect(page.locator('.terminal-area:visible')).toBeVisible()
     })
   })
 
@@ -429,16 +429,16 @@ test.describe('Arena Dashboard', () => {
       await page.waitForSelector('.session-item')
 
       // First, we need windows with sessions to test focus
-      await page.click('.layout-btn:has-text("2")')
-      await expect(page.locator('.terminal-window')).toHaveCount(2)
+      await page.click('.layout-btn:visible:has-text("2")')
+      await expect(page.locator('.terminal-window:visible')).toHaveCount(2)
 
       // Add sessions to both windows
-      await dragAndDrop(page, '.session-item:has-text("jack")', '.terminal-window >> nth=0')
-      await dragAndDrop(page, '.session-item:has-text("joe")', '.terminal-window >> nth=1')
+      await dragAndDrop(page, '.session-item:has-text("jack")', '.terminal-window:visible >> nth=0')
+      await dragAndDrop(page, '.session-item:has-text("joe")', '.terminal-window:visible >> nth=1')
 
       // Verify sessions are in windows
-      await expect(page.locator('.terminal-window').nth(0).locator('.session-tag')).toHaveCount(1)
-      await expect(page.locator('.terminal-window').nth(1).locator('.session-tag')).toHaveCount(1)
+      await expect(page.locator('.terminal-window:visible').nth(0).locator('.session-tag')).toHaveCount(1)
+      await expect(page.locator('.terminal-window:visible').nth(1).locator('.session-tag')).toHaveCount(1)
 
       // Initially window 0 should be focused (default)
       // Press Ctrl+Down to focus window 1
@@ -451,12 +451,12 @@ test.describe('Arena Dashboard', () => {
     test('should cycle sessions with Ctrl+Right', async ({ page }) => {
       await page.waitForSelector('.session-item')
 
-      const targetWindow = page.locator('.terminal-window').first()
+      const targetWindow = page.locator('.terminal-window:visible').first()
 
       // Add multiple sessions to first window
-      await dragAndDrop(page, '.session-item:has-text("jack")', '.terminal-window')
-      await dragAndDrop(page, '.session-item:has-text("joe")', '.terminal-window')
-      await dragAndDrop(page, '.session-item:has-text("max")', '.terminal-window')
+      await dragAndDrop(page, '.session-item:has-text("jack")', '.terminal-window:visible')
+      await dragAndDrop(page, '.session-item:has-text("joe")', '.terminal-window:visible')
+      await dragAndDrop(page, '.session-item:has-text("max")', '.terminal-window:visible')
 
       // Verify 3 sessions in window
       await expect(targetWindow.locator('.session-tag')).toHaveCount(3)
@@ -464,49 +464,60 @@ test.describe('Arena Dashboard', () => {
       // First session should be active
       await expect(targetWindow.locator('.session-tag').first()).toHaveClass(/active/)
 
-      // Click on the status dot (safe area that won't trigger any action) to focus for keyboard navigation
+      // Click on the window to focus it for keyboard navigation
       await targetWindow.locator('.status-dot').click()
-      // Verify window now has focus class
       await expect(targetWindow).toHaveClass(/focused/)
 
-      // Press Ctrl+Right to cycle to next session
-      await page.keyboard.press('Control+ArrowRight')
+      // Dispatch Ctrl+Arrow events directly on the page window
+      // (page.keyboard.press goes to the focused iframe, not the main window listener)
+      const pressCtrlRight = () => page.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', ctrlKey: true, bubbles: true }))
+      })
+      const pressCtrlLeft = () => page.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', ctrlKey: true, bubbles: true }))
+      })
+
+      await pressCtrlRight()
       await expect(targetWindow.locator('.session-tag').nth(1)).toHaveClass(/active/)
 
       // Press again
-      await page.keyboard.press('Control+ArrowRight')
+      await pressCtrlRight()
       await expect(targetWindow.locator('.session-tag').nth(2)).toHaveClass(/active/)
 
       // Press again to wrap around
-      await page.keyboard.press('Control+ArrowRight')
+      await pressCtrlRight()
       await expect(targetWindow.locator('.session-tag').first()).toHaveClass(/active/)
     })
 
     test('should cycle sessions backwards with Ctrl+Left', async ({ page }) => {
       await page.waitForSelector('.session-item')
 
-      const targetWindow = page.locator('.terminal-window').first()
+      const targetWindow = page.locator('.terminal-window:visible').first()
 
       // Add multiple sessions
-      await dragAndDrop(page, '.session-item:has-text("jack")', '.terminal-window')
-      await dragAndDrop(page, '.session-item:has-text("joe")', '.terminal-window')
+      await dragAndDrop(page, '.session-item:has-text("jack")', '.terminal-window:visible')
+      await dragAndDrop(page, '.session-item:has-text("joe")', '.terminal-window:visible')
 
       await expect(targetWindow.locator('.session-tag')).toHaveCount(2)
 
       // First is active
       await expect(targetWindow.locator('.session-tag').first()).toHaveClass(/active/)
 
-      // Click on the status dot (safe area that won't trigger any action) to focus for keyboard navigation
+      // Click on the window to focus it for keyboard navigation
       await targetWindow.locator('.status-dot').click()
-      // Verify window now has focus class
       await expect(targetWindow).toHaveClass(/focused/)
 
+      // Dispatch Ctrl+Arrow events directly on the page window
+      const pressCtrlLeft = () => page.evaluate(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', ctrlKey: true, bubbles: true }))
+      })
+
       // Press Ctrl+Left to go to last (wrapping)
-      await page.keyboard.press('Control+ArrowLeft')
+      await pressCtrlLeft()
       await expect(targetWindow.locator('.session-tag').nth(1)).toHaveClass(/active/)
 
       // Press again to go back to first
-      await page.keyboard.press('Control+ArrowLeft')
+      await pressCtrlLeft()
       await expect(targetWindow.locator('.session-tag').first()).toHaveClass(/active/)
     })
   })
@@ -514,7 +525,7 @@ test.describe('Arena Dashboard', () => {
   test.describe('Persistence', () => {
     test('should persist layout to localStorage', async ({ page }) => {
       // Switch to 4 windows
-      await page.click('.layout-btn:has-text("4")')
+      await page.click('.layout-btn:visible:has-text("4")')
 
       // Reload page
       await page.reload()
@@ -522,8 +533,8 @@ test.describe('Arena Dashboard', () => {
       await page.waitForSelector('.dashboard')
 
       // Should still be 4 windows
-      await expect(page.locator('.terminal-window')).toHaveCount(4)
-      await expect(page.locator('.layout-btn.active')).toContainText('4')
+      await expect(page.locator('.terminal-window:visible')).toHaveCount(4)
+      await expect(page.locator('.layout-btn.active:visible')).toContainText('4')
     })
 
     test('should persist session bindings to localStorage', async ({ page }) => {

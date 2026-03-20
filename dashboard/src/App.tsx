@@ -7,7 +7,6 @@ import TerminalArea from './components/TerminalArea'
 import FilesView from './components/FilesView'
 import SettingsView from './components/SettingsView'
 import FloatingModal from './components/FloatingModal'
-import ComposePanel from './components/ComposePanel'
 import HelpView from './components/HelpView'
 import BeadsViewerTab from './components/BeadsViewerTab'
 import ManualView from './components/ManualView'
@@ -16,6 +15,7 @@ import ErrorBoundary from './components/ErrorBoundary'
 import { ToastContainer } from './components/ToastNotification'
 import KeyboardShortcutsOverlay from './components/KeyboardShortcutsOverlay'
 import LayoutPresetsPanel from './components/LayoutPresetsPanel'
+import { IframePoolProvider } from './components/IframePool'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 
 // Dragged item overlay component
@@ -33,7 +33,7 @@ function DashboardContent() {
   const [activeDragId, setActiveDragId] = useState<string | null>(null)
   const [showHelp, setShowHelp] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
-  const { addSessionToWindow, removeSessionFromWindow, setIsDragging, isDragging, settings, openComposePanel, workspaces } = useSession()
+  const { addSessionToWindow, removeSessionFromWindow, setIsDragging, isDragging, settings } = useSession()
 
   const handleShowHelp = useCallback(() => setShowHelp(true), [])
   const handleCloseHelp = useCallback(() => setShowHelp(false), [])
@@ -119,12 +119,16 @@ function DashboardContent() {
         />
 
         <div className="dashboard-content">
-          {(activeTab === 'terminal1' || activeTab === 'terminal2') && (
-            <>
-              <SessionPanel />
-              <TerminalArea workspaceId={activeTab} />
-            </>
-          )}
+          {/* Terminal areas are always rendered (hidden via CSS) to preserve iframe connections */}
+          <div style={{ display: (activeTab === 'terminal1' || activeTab === 'terminal2') ? 'contents' : 'none' }}>
+            <SessionPanel />
+          </div>
+          <div style={{ display: activeTab === 'terminal1' ? 'contents' : 'none' }}>
+            <TerminalArea workspaceId="terminal1" />
+          </div>
+          <div style={{ display: activeTab === 'terminal2' ? 'contents' : 'none' }}>
+            <TerminalArea workspaceId="terminal2" />
+          </div>
           {activeTab === 'files' && <FilesView />}
           {activeTab === 'beads_viewer' && (
             <ErrorBoundary>
@@ -142,25 +146,6 @@ function DashboardContent() {
         </div>
 
         <FloatingModal />
-        <ComposePanel />
-
-        {/* Compose FAB - visible on terminal tabs */}
-        {(activeTab === 'terminal1' || activeTab === 'terminal2') && (
-          <button
-            className="compose-fab"
-            title="Compose text (voice-to-text)"
-            onClick={() => {
-              // Find the first active session in the current workspace
-              const ws = workspaces[activeTab]
-              const activeSession = ws.windows.find(w => w.activeSession)?.activeSession
-              if (activeSession) {
-                openComposePanel(activeSession)
-              }
-            }}
-          >
-            &#9998;
-          </button>
-        )}
 
         {/* Overlays */}
         <KeyboardShortcutsOverlay isOpen={showHelp} onClose={handleCloseHelp} />
@@ -180,7 +165,9 @@ function DashboardContent() {
 function App() {
   return (
     <SessionProvider>
-      <DashboardContent />
+      <IframePoolProvider>
+        <DashboardContent />
+      </IframePoolProvider>
     </SessionProvider>
   )
 }
