@@ -188,7 +188,6 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
     setActiveSession,
     cycleSession,
     openComposePanel,
-    settings,
     focusedWindowKey,
     setFocusedWindowKey,
   } = useSession()
@@ -255,7 +254,9 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
   // and automatically trigger reconnection
   useEffect(() => {
     const interval = setInterval(() => {
-      iframeRefs.current.forEach((iframe) => {
+      windowConfig.boundSessions.forEach((sessionName) => {
+        const iframe = pool.getIframe(sessionName)
+        if (!iframe) return
         try {
           const doc = iframe.contentDocument || iframe.contentWindow?.document
           if (!doc) return
@@ -274,7 +275,8 @@ function TerminalWindow({ workspaceId, window: windowConfig, isDragging = false,
       })
     }, 2000)
     return () => clearInterval(interval)
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- pool.getIframe is stable
+  }, [windowConfig.boundSessions])
 
   // Handle click on this window to focus it for keyboard navigation
   const handleWindowClick = useCallback(() => {
