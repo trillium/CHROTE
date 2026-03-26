@@ -305,45 +305,98 @@ func (h *ChatHandler) ListConversations(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// hqEmoji maps HQ role names to display emojis
+var hqEmoji = map[string]string{
+	"mayor":    "🎩",
+	"deacon":   "🐺",
+	"witness":  "🦉",
+	"refinery": "🏭",
+}
+
+// capitalizeFirst capitalizes the first character of a string
+func capitalizeFirst(s string) string {
+	if s == "" {
+		return ""
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 // parseSessionName derives chat identity from tmux session name
 func (h *ChatHandler) parseSessionName(name string) (target, displayName, role string) {
-	// Simplified Logic:
-	// 1. hq-X -> target=X
-	// 2. gt-A-B-C -> target=A/B/C
-	// DisplayName is always the full session name
-
-	displayName = name
-
+	// HQ sessions: hq-{role}
 	if strings.HasPrefix(name, "hq-") {
-		// e.g. hq-mayor -> mayor
-		target = strings.TrimPrefix(name, "hq-")
-		role = target
+		roleName := strings.TrimPrefix(name, "hq-")
+		target = roleName
+		role = roleName
+		emoji := hqEmoji[roleName]
+		if emoji == "" {
+			emoji = "👤"
+		}
+		displayName = emoji + " " + capitalizeFirst(roleName)
 		return
 	}
 
+	// Gastown sessions: gt-{rig}-{type}[-{name}]
 	if strings.HasPrefix(name, "gt-") {
-		// e.g. gt-greenplace-crew-max -> greenplace/crew/max
-		// e.g. gt-greenplace-witness -> greenplace/witness
 		trimmed := strings.TrimPrefix(name, "gt-")
-		target = strings.ReplaceAll(trimmed, "-", "/")
+		// Split into at most 3 parts: rig, type, rest
+		parts := strings.SplitN(trimmed, "-", 3)
 
-		// Role parsing for sorting
-		role = "agent"
-		if strings.Contains(target, "/crew/") {
-			role = "crew"
-		} else if strings.Contains(target, "witness") {
+		if len(parts) < 2 {
+			// Single segment: gt-boot, gt-witness, gt-refinery, etc.
+			// Only treat known role names as chat targets
+			switch parts[0] {
+			case "witness":
+				target, role, displayName = "witness", "witness", "🦉 Witness"
+			case "refinery":
+				target, role, displayName = "refinery", "refinery", "🏭 Refinery"
+			}
+			return
+		}
+
+		rigName := parts[0]
+		typeName := parts[1]
+
+		switch typeName {
+		case "witness":
+			target = "witness"
 			role = "witness"
-		} else if strings.Contains(target, "refinery") {
+			displayName = "🦉 Witness"
+		case "refinery":
+			target = "refinery"
 			role = "refinery"
-		} else if strings.Contains(target, "polecat") {
+			displayName = "🏭 Refinery"
+		case "crew":
+			if len(parts) >= 3 {
+				memberName := parts[2]
+				target = rigName + "/" + memberName
+				role = "crew"
+				displayName = "👷 " + capitalizeFirst(memberName)
+			}
+		case "polecat":
+			if len(parts) >= 3 {
+				id := parts[2]
+				target = name
+				role = "polecat"
+				displayName = "🐱 Polecat " + id
+			}
+		case "pc":
+			if len(parts) >= 3 {
+				id := parts[2]
+				target = name
+				role = "polecat"
+				displayName = "🐱 Polecat " + id
+			}
+		default:
+			// Generic gt-{rig}-{name} → polecat
+			target = rigName + "/" + typeName
 			role = "polecat"
+			displayName = "🐱 " + capitalizeFirst(typeName)
 		}
 		return
 	}
 
-	// Fallback
-	target = name
-	role = "other"
+	// Everything else is not a chat target
 	return
 }
 
@@ -382,6 +435,7 @@ func (h *ChatHandler) parseStatusForConversations(output string) []Conversation 
 
 
 // GetHistory handles GET /api/chat/history?target=...&workspace=...
+// workspace is optional; if omitted, returns empty message list
 func (h *ChatHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	target := r.URL.Query().Get("target")
 	if target == "" {
@@ -390,58 +444,55 @@ func (h *ChatHandler) GetHistory(w http.ResponseWriter, r *http.Request) {
 	}
 
 	workspace := r.URL.Query().Get("workspace")
-	if workspace == "" {
-		core.WriteError(w, http.StatusBadRequest, "MISSING_WORKSPACE", "Workspace query parameter is required")
-		return
-	}
-
-	// Validate workspace
-	daemonPath := filepath.Join(workspace, "daemon")
-	if !core.FileExists(daemonPath) {
-		core.WriteError(w, http.StatusBadRequest, "INVALID_WORKSPACE", "Not a valid Gastown workspace")
-		return
-	}
 
 	var messages []ChatMessage
 
-	// 1. Get messages TO the target (sent by overseer/user)
-	sentMessages := h.getMailboxMessages(workspace, target)
-	for _, msg := range sentMessages {
-		if msg.From == "overseer" {
-			messages = append(messages, ChatMessage{
-				ID:        msg.ID,
-				Role:      "user",
-				From:      msg.From,
-				To:        msg.To,
-				Content:   msg.Body,
-				Timestamp: msg.Timestamp,
-				Read:      msg.Read,
-			})
+	if workspace != "" {
+		// Validate workspace
+		daemonPath := filepath.Join(workspace, "daemon")
+		if !core.FileExists(daemonPath) {
+			core.WriteError(w, http.StatusBadRequest, "INVALID_WORKSPACE", "Not a valid Gastown workspace")
+			return
 		}
-	}
 
-	// 2. Get messages FROM the target (replies to overseer)
-	receivedMessages := h.getMailboxMessages(workspace, "overseer")
-	for _, msg := range receivedMessages {
-		// Filter for messages from our target
-		if h.normalizeTarget(msg.From) == h.normalizeTarget(target) {
-			messages = append(messages, ChatMessage{
-				ID:        msg.ID,
-				Role:      "agent",
-				From:      msg.From,
-				To:        msg.To,
-				Content:   msg.Body,
-				Timestamp: msg.Timestamp,
-				Read:      msg.Read,
-			})
+		// 1. Get messages TO the target (sent by overseer/user)
+		sentMessages := h.getMailboxMessages(workspace, target)
+		for _, msg := range sentMessages {
+			if msg.From == "overseer" {
+				messages = append(messages, ChatMessage{
+					ID:        msg.ID,
+					Role:      "user",
+					From:      msg.From,
+					To:        msg.To,
+					Content:   msg.Body,
+					Timestamp: msg.Timestamp,
+					Read:      msg.Read,
+				})
+			}
 		}
-	}
 
-	// Sort by timestamp (oldest first for chat display)
-	for i := 0; i < len(messages)-1; i++ {
-		for j := i + 1; j < len(messages); j++ {
-			if messages[i].Timestamp.After(messages[j].Timestamp) {
-				messages[i], messages[j] = messages[j], messages[i]
+		// 2. Get messages FROM the target (replies to overseer)
+		receivedMessages := h.getMailboxMessages(workspace, "overseer")
+		for _, msg := range receivedMessages {
+			if h.normalizeTarget(msg.From) == h.normalizeTarget(target) {
+				messages = append(messages, ChatMessage{
+					ID:        msg.ID,
+					Role:      "agent",
+					From:      msg.From,
+					To:        msg.To,
+					Content:   msg.Body,
+					Timestamp: msg.Timestamp,
+					Read:      msg.Read,
+				})
+			}
+		}
+
+		// Sort by timestamp (oldest first for chat display)
+		for i := 0; i < len(messages)-1; i++ {
+			for j := i + 1; j < len(messages); j++ {
+				if messages[i].Timestamp.After(messages[j].Timestamp) {
+					messages[i], messages[j] = messages[j], messages[i]
+				}
 			}
 		}
 	}
@@ -570,11 +621,6 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Workspace == "" {
-		core.WriteError(w, http.StatusBadRequest, "MISSING_WORKSPACE", "Workspace is required")
-		return
-	}
-
 	if req.Target == "" {
 		core.WriteError(w, http.StatusBadRequest, "MISSING_TARGET", "Target is required")
 		return
@@ -582,6 +628,11 @@ func (h *ChatHandler) SendMessage(w http.ResponseWriter, r *http.Request) {
 
 	if req.Message == "" {
 		core.WriteError(w, http.StatusBadRequest, "EMPTY_MESSAGE", "Message cannot be empty")
+		return
+	}
+
+	if req.Workspace == "" {
+		core.WriteError(w, http.StatusBadRequest, "MISSING_WORKSPACE", "Workspace is required")
 		return
 	}
 

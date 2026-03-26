@@ -98,6 +98,11 @@ func (h *FilesHandler) resolveSafePath(requestPath string) PathResult {
 		return PathResult{Error: "Path not allowed"}
 	}
 
+	// Verify the root actually exists on this system
+	if _, err := os.Stat(matchedRoot); err != nil {
+		return PathResult{Error: "Path not allowed"}
+	}
+
 	// Resolve to absolute and verify it's still under allowed root
 	resolved, err := filepath.Abs(normalized)
 	if err != nil {
