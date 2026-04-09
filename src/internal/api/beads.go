@@ -163,6 +163,33 @@ func (h *BeadsHandler) parseJsonlFile(filePath string) ([]map[string]interface{}
 	return items, nil
 }
 
+// fetchIssuesViaBd runs `bd list --json` in the project directory to query Dolt-backed beads
+func (h *BeadsHandler) fetchIssuesViaBd(projectPath string) ([]map[string]interface{}, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), h.execTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "bd", "list", "--json")
+	cmd.Dir = projectPath
+
+	output, err := cmd.Output()
+	if err != nil {
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("bd list timed out after %v", h.execTimeout)
+		}
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("bd list failed: %s", string(exitErr.Stderr))
+		}
+		return nil, fmt.Errorf("bd list failed: %v", err)
+	}
+
+	var issues []map[string]interface{}
+	if err := json.Unmarshal(output, &issues); err != nil {
+		return nil, fmt.Errorf("bd list returned invalid JSON: %v", err)
+	}
+
+	return issues, nil
+}
+
 // transformIssue converts raw JSONL issue to frontend-expected format
 func transformIssue(raw map[string]interface{}) map[string]interface{} {
 	issue := make(map[string]interface{})
@@ -221,7 +248,7 @@ func (h *BeadsHandler) Health(w http.ResponseWriter, r *http.Request) {
 	core.WriteSuccess(w, map[string]interface{}{
 		"status":       "ok",
 		"bvVersion":    version,
-		"allowedRoots": core.AllowedRoots,
+		"allowedRoots": core.GetAllowedRoots(),
 	})
 }
 
@@ -236,7 +263,7 @@ func (h *BeadsHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 	var warnings []string
 	const maxDepth = 5
 
-	for _, root := range core.AllowedRoots {
+	for _, root := range core.GetAllowedRoots() {
 		if !core.FileExists(root) {
 			warnings = append(warnings, "Allowed root does not exist: "+root)
 			continue
@@ -324,17 +351,28 @@ func (h *BeadsHandler) Issues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	issuesFile := filepath.Join(beadsPath, "issues.jsonl")
-	if !core.FileExists(issuesFile) {
-		core.WriteError(w, http.StatusNotFound, "NOT_FOUND",
-			fmt.Sprintf("No issues.jsonl file found in %s. Create issues with 'bv add'.", beadsPath))
-		return
-	}
+	var issues []map[string]interface{}
 
-	issues, err := h.parseJsonlFile(issuesFile)
-	if err != nil {
-		core.WriteError(w, http.StatusUnprocessableEntity, "INVALID_JSONL", err.Error())
-		return
+	// Dolt-backed beads: use bd list --json
+	if core.FileExists(filepath.Join(beadsPath, "dolt")) {
+		issues, err = h.fetchIssuesViaBd(projectPath)
+		if err != nil {
+			core.WriteError(w, http.StatusBadGateway, "BD_ERROR", err.Error())
+			return
+		}
+	} else {
+		// Flat-file beads: read issues.jsonl directly
+		issuesFile := filepath.Join(beadsPath, "issues.jsonl")
+		if !core.FileExists(issuesFile) {
+			core.WriteError(w, http.StatusNotFound, "NOT_FOUND",
+				fmt.Sprintf("No issues.jsonl file found in %s. Create issues with 'bv add'.", beadsPath))
+			return
+		}
+		issues, err = h.parseJsonlFile(issuesFile)
+		if err != nil {
+			core.WriteError(w, http.StatusUnprocessableEntity, "INVALID_JSONL", err.Error())
+			return
+		}
 	}
 
 	// Transform issues to match frontend interface
