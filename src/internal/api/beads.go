@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,14 +22,41 @@ import (
 type BeadsHandler struct {
 	bvCommand   string
 	execTimeout time.Duration
+	remoteURL   string // if set, proxy all requests to this URL
 }
 
-// NewBeadsHandler creates a new BeadsHandler
+// NewBeadsHandler creates a new BeadsHandler using local bv
 func NewBeadsHandler() *BeadsHandler {
 	return &BeadsHandler{
 		bvCommand:   "bv",
 		execTimeout: 60 * time.Second,
 	}
+}
+
+// NewBeadsHandlerWithRemote creates a BeadsHandler that proxies to a remote chrote instance
+func NewBeadsHandlerWithRemote(remoteURL string) *BeadsHandler {
+	return &BeadsHandler{
+		bvCommand:   "bv",
+		execTimeout: 60 * time.Second,
+		remoteURL:   remoteURL,
+	}
+}
+
+// proxyRequest forwards the request to the configured remote chrote instance
+func (h *BeadsHandler) proxyRequest(w http.ResponseWriter, r *http.Request) {
+	target, err := url.Parse(h.remoteURL)
+	if err != nil {
+		core.WriteError(w, http.StatusInternalServerError, "PROXY_ERROR", "Invalid remote beads URL: "+err.Error())
+		return
+	}
+	proxy := &httputil.ReverseProxy{
+		Director: func(req *http.Request) {
+			req.URL.Scheme = target.Scheme
+			req.URL.Host = target.Host
+			req.Host = target.Host
+		},
+	}
+	proxy.ServeHTTP(w, r)
 }
 
 // RegisterRoutes registers the beads routes on the given mux
@@ -178,6 +207,10 @@ func transformIssue(raw map[string]interface{}) map[string]interface{} {
 
 // Health handles GET /api/beads/health
 func (h *BeadsHandler) Health(w http.ResponseWriter, r *http.Request) {
+	if h.remoteURL != "" {
+		h.proxyRequest(w, r)
+		return
+	}
 	version, err := h.getBvVersion()
 	if err != nil {
 		core.WriteError(w, http.StatusServiceUnavailable, "BV_NOT_INSTALLED",
@@ -195,6 +228,10 @@ func (h *BeadsHandler) Health(w http.ResponseWriter, r *http.Request) {
 // ListProjects handles GET /api/beads/projects
 // Scans up to 5 levels deep for .beads folders
 func (h *BeadsHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
+	if h.remoteURL != "" {
+		h.proxyRequest(w, r)
+		return
+	}
 	var projects []map[string]interface{}
 	var warnings []string
 	const maxDepth = 5
@@ -271,6 +308,10 @@ func (h *BeadsHandler) ListProjects(w http.ResponseWriter, r *http.Request) {
 
 // Issues handles GET /api/beads/issues
 func (h *BeadsHandler) Issues(w http.ResponseWriter, r *http.Request) {
+	if h.remoteURL != "" {
+		h.proxyRequest(w, r)
+		return
+	}
 	projectPath, code, msg := core.ValidateProjectPath(r.URL.Query().Get("path"))
 	if code != "" {
 		core.WriteError(w, core.GetErrorStatusCode(code), code, msg)
@@ -311,6 +352,10 @@ func (h *BeadsHandler) Issues(w http.ResponseWriter, r *http.Request) {
 
 // Triage handles GET /api/beads/triage
 func (h *BeadsHandler) Triage(w http.ResponseWriter, r *http.Request) {
+	if h.remoteURL != "" {
+		h.proxyRequest(w, r)
+		return
+	}
 	if !h.checkBvInstalled() {
 		core.WriteError(w, http.StatusServiceUnavailable, "BV_NOT_INSTALLED",
 			"bv command not found. Install beads_viewer.")
@@ -339,6 +384,10 @@ func (h *BeadsHandler) Triage(w http.ResponseWriter, r *http.Request) {
 
 // Insights handles GET /api/beads/insights
 func (h *BeadsHandler) Insights(w http.ResponseWriter, r *http.Request) {
+	if h.remoteURL != "" {
+		h.proxyRequest(w, r)
+		return
+	}
 	if !h.checkBvInstalled() {
 		core.WriteError(w, http.StatusServiceUnavailable, "BV_NOT_INSTALLED",
 			"bv command not found. Install beads_viewer.")
@@ -367,6 +416,10 @@ func (h *BeadsHandler) Insights(w http.ResponseWriter, r *http.Request) {
 
 // Graph handles GET /api/beads/graph
 func (h *BeadsHandler) Graph(w http.ResponseWriter, r *http.Request) {
+	if h.remoteURL != "" {
+		h.proxyRequest(w, r)
+		return
+	}
 	if !h.checkBvInstalled() {
 		core.WriteError(w, http.StatusServiceUnavailable, "BV_NOT_INSTALLED",
 			"bv command not found. Install beads_viewer.")

@@ -36,11 +36,13 @@ type Config struct {
 func main() {
 	// Parse flags
 	config := Config{}
+	var beadsRemoteURL string
 	flag.IntVar(&config.Port, "port", 8080, "Server port")
 	flag.IntVar(&config.TtydPort, "ttyd-port", 7681, "ttyd port")
 	flag.IntVar(&config.BvTtydPort, "bv-ttyd-port", 7682, "bv (beads viewer) ttyd port")
 	flag.StringVar(&config.APIAuthToken, "auth-token", "", "API authentication token")
 	flag.BoolVar(&config.StartTtyd, "start-ttyd", true, "Start ttyd child process")
+	flag.StringVar(&beadsRemoteURL, "beads-remote-url", "", "Proxy beads API to remote chrote instance (e.g. http://mini2:8081)")
 	flag.Parse()
 
 	// Environment overrides
@@ -56,6 +58,9 @@ func main() {
 	if token := os.Getenv("API_AUTH_TOKEN"); token != "" {
 		config.APIAuthToken = token
 	}
+	if u := os.Getenv("BEADS_REMOTE_URL"); u != "" {
+		beadsRemoteURL = u
+	}
 	if origins := os.Getenv("CORS_ORIGINS"); origins != "" {
 		config.CORSOrigins = strings.Split(origins, ",")
 		for i := range config.CORSOrigins {
@@ -70,7 +75,13 @@ func main() {
 	tmuxHandler := api.NewTmuxHandler()
 	tmuxHandler.RegisterRoutes(mux)
 
-	beadsHandler := api.NewBeadsHandler()
+	var beadsHandler *api.BeadsHandler
+	if beadsRemoteURL != "" {
+		log.Printf("Beads: proxying to remote %s", beadsRemoteURL)
+		beadsHandler = api.NewBeadsHandlerWithRemote(beadsRemoteURL)
+	} else {
+		beadsHandler = api.NewBeadsHandler()
+	}
 	beadsHandler.RegisterRoutes(mux)
 
 	filesHandler := api.NewFilesHandler()
