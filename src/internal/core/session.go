@@ -2,6 +2,7 @@
 package core
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 	"sort"
@@ -102,25 +103,46 @@ func GetTmuxTmpdir() string {
 	return "/run/tmux/chrote"
 }
 
-// DiscoverTmuxSockets scans the tmux socket directory and returns the names
+// DiscoverTmuxSockets scans tmux socket directories and returns the names
 // of all non-default sockets found. These correspond to tmux servers started
-// with "tmux -L <name>". Returns nil (not an error) if the directory doesn't
-// exist or can't be read.
+// with "tmux -L <name>". Checks both TMUX_TMPDIR (or CHROTE default) and
+// the platform default (/private/tmp/tmux-<uid> on macOS, /tmp/tmux-<uid>
+// on Linux). Returns nil if no extra sockets are found.
 func DiscoverTmuxSockets() []string {
-	tmpdir := GetTmuxTmpdir()
-	entries, err := os.ReadDir(tmpdir)
-	if err != nil {
-		return nil
-	}
+	seen := make(map[string]bool)
 	var sockets []string
-	for _, e := range entries {
-		name := e.Name()
-		if name == "default" || e.IsDir() {
+
+	for _, dir := range tmuxSocketDirs() {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
 			continue
 		}
-		sockets = append(sockets, name)
+		for _, e := range entries {
+			name := e.Name()
+			if name == "default" || e.IsDir() || seen[name] {
+				continue
+			}
+			seen[name] = true
+			sockets = append(sockets, name)
+		}
 	}
 	return sockets
+}
+
+// tmuxSocketDirs returns the directories to scan for tmux sockets.
+func tmuxSocketDirs() []string {
+	dirs := []string{GetTmuxTmpdir()}
+
+	// Also check the platform default: /private/tmp/tmux-<uid> (macOS)
+	// or /tmp/tmux-<uid> (Linux), which tmux uses when TMUX_TMPDIR is unset.
+	uid := os.Getuid()
+	for _, base := range []string{"/private/tmp", "/tmp"} {
+		dir := fmt.Sprintf("%s/tmux-%d", base, uid)
+		if dir != dirs[0] {
+			dirs = append(dirs, dir)
+		}
+	}
+	return dirs
 }
 
 // GetTmuxEnv returns the environment for tmux commands
