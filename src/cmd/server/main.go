@@ -25,24 +25,27 @@ var Version = "0.2.0"
 
 // Config holds server configuration
 type Config struct {
-	Port          int
-	TtydPort      int
-	BvTtydPort    int
-	APIAuthToken  string
-	CORSOrigins   []string
-	StartTtyd     bool
+	Port             int
+	TtydPort         int
+	BvTtydPort       int
+	APIAuthToken     string
+	CORSOrigins      []string
+	StartTtyd        bool
+	ExtraTmuxSockets []string
 }
 
 func main() {
 	// Parse flags
 	config := Config{}
 	var beadsRemoteURL string
+	var extraSockets string
 	flag.IntVar(&config.Port, "port", 8080, "Server port")
 	flag.IntVar(&config.TtydPort, "ttyd-port", 7681, "ttyd port")
 	flag.IntVar(&config.BvTtydPort, "bv-ttyd-port", 7682, "bv (beads viewer) ttyd port")
 	flag.StringVar(&config.APIAuthToken, "auth-token", "", "API authentication token")
 	flag.BoolVar(&config.StartTtyd, "start-ttyd", true, "Start ttyd child process")
 	flag.StringVar(&beadsRemoteURL, "beads-remote-url", "", "Proxy beads API to remote chrote instance (e.g. http://mini2:8081)")
+	flag.StringVar(&extraSockets, "tmux-extra-sockets", "", "Comma-separated additional tmux socket names to scan (e.g. gascity,gastown)")
 	flag.Parse()
 
 	// Environment overrides
@@ -67,12 +70,23 @@ func main() {
 			config.CORSOrigins[i] = strings.TrimSpace(config.CORSOrigins[i])
 		}
 	}
+	if sockets := os.Getenv("TMUX_EXTRA_SOCKETS"); sockets != "" {
+		extraSockets = sockets
+	}
+	if extraSockets != "" {
+		for _, s := range strings.Split(extraSockets, ",") {
+			s = strings.TrimSpace(s)
+			if s != "" {
+				config.ExtraTmuxSockets = append(config.ExtraTmuxSockets, s)
+			}
+		}
+	}
 
 	// Create main mux
 	mux := http.NewServeMux()
 
 	// Register API handlers
-	tmuxHandler := api.NewTmuxHandler()
+	tmuxHandler := api.NewTmuxHandler(config.ExtraTmuxSockets)
 	tmuxHandler.RegisterRoutes(mux)
 
 	var beadsHandler *api.BeadsHandler
@@ -133,6 +147,9 @@ func main() {
 
 	go func() {
 		log.Printf("CHROTE v%s starting on port %d", Version, config.Port)
+		if len(config.ExtraTmuxSockets) > 0 {
+			log.Printf("Extra tmux sockets: %v", config.ExtraTmuxSockets)
+		}
 		log.Printf("Dashboard: http://localhost:%d/", config.Port)
 		log.Printf("API: http://localhost:%d/api/", config.Port)
 		log.Printf("Chat: http://localhost:%d/api/chat/", config.Port)

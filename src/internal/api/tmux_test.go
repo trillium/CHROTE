@@ -9,10 +9,10 @@ import (
 )
 
 func TestTmuxHandler_NewTmuxHandler(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	if handler == nil {
-		t.Fatal("NewTmuxHandler() returned nil")
+		t.Fatal("NewTmuxHandler(nil) returned nil")
 	}
 	if handler.cache == nil {
 		t.Error("Handler cache is nil")
@@ -23,7 +23,7 @@ func TestTmuxHandler_NewTmuxHandler(t *testing.T) {
 }
 
 func TestTmuxHandler_ValidateColor(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	tests := []struct {
 		name    string
@@ -51,7 +51,7 @@ func TestTmuxHandler_ValidateColor(t *testing.T) {
 }
 
 func TestTmuxHandler_CreateSession_InvalidJSON(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	// Test with invalid JSON
 	req := httptest.NewRequest(http.MethodPost, "/api/tmux/sessions", bytes.NewBufferString("{invalid}"))
@@ -66,7 +66,7 @@ func TestTmuxHandler_CreateSession_InvalidJSON(t *testing.T) {
 }
 
 func TestTmuxHandler_CreateSession_InvalidName(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	body := CreateSessionRequest{Name: "invalid name with spaces"}
 	bodyBytes, _ := json.Marshal(body)
@@ -90,7 +90,7 @@ func TestTmuxHandler_CreateSession_InvalidName(t *testing.T) {
 }
 
 func TestTmuxHandler_DeleteSession_InvalidName(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/tmux/sessions/invalid@name", nil)
 	req.SetPathValue("name", "invalid@name")
@@ -104,7 +104,7 @@ func TestTmuxHandler_DeleteSession_InvalidName(t *testing.T) {
 }
 
 func TestTmuxHandler_DeleteAllSessions_NoConfirmHeader(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/tmux/sessions/all", nil)
 	// Intentionally NOT setting X-Nuke-Confirm header
@@ -125,7 +125,7 @@ func TestTmuxHandler_DeleteAllSessions_NoConfirmHeader(t *testing.T) {
 }
 
 func TestTmuxHandler_RenameSession_InvalidNewName(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	body := RenameSessionRequest{NewName: "invalid name!"}
 	bodyBytes, _ := json.Marshal(body)
@@ -143,7 +143,7 @@ func TestTmuxHandler_RenameSession_InvalidNewName(t *testing.T) {
 }
 
 func TestTmuxHandler_ApplyAppearance_InvalidColor(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	body := AppearanceRequest{
 		StatusBg: "invalidcolor@#$",
@@ -163,7 +163,7 @@ func TestTmuxHandler_ApplyAppearance_InvalidColor(t *testing.T) {
 }
 
 func TestTmuxHandler_RegisterRoutes(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 	mux := http.NewServeMux()
 
 	// This should not panic
@@ -171,7 +171,7 @@ func TestTmuxHandler_RegisterRoutes(t *testing.T) {
 }
 
 func TestTmuxHandler_ListSessions_ReturnsValidJSON(t *testing.T) {
-	handler := NewTmuxHandler()
+	handler := NewTmuxHandler(nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/tmux/sessions", nil)
 	recorder := httptest.NewRecorder()

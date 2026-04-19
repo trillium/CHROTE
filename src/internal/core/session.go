@@ -14,6 +14,7 @@ type Session struct {
 	Windows  int    `json:"windows"`
 	Attached bool   `json:"attached"`
 	Group    string `json:"group"`
+	Socket   string `json:"socket,omitempty"` // tmux socket name; empty = default server
 }
 
 // GroupPriority defines the sort order for session groups

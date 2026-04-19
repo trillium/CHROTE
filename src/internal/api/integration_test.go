@@ -12,7 +12,7 @@ func TestIntegration_FullAPIRouting(t *testing.T) {
 	mux := http.NewServeMux()
 
 	// Register all handlers
-	tmuxHandler := NewTmuxHandler()
+	tmuxHandler := NewTmuxHandler(nil)
 	tmuxHandler.RegisterRoutes(mux)
 
 	healthHandler := NewHealthHandler()
@@ -102,7 +102,7 @@ func TestIntegration_APIResponseFormat(t *testing.T) {
 	healthHandler := NewHealthHandler()
 	healthHandler.RegisterRoutes(mux)
 
-	tmuxHandler := NewTmuxHandler()
+	tmuxHandler := NewTmuxHandler(nil)
 	tmuxHandler.RegisterRoutes(mux)
 
 	endpoints := []struct {
@@ -137,7 +137,7 @@ func TestIntegration_APIResponseFormat(t *testing.T) {
 func TestIntegration_ErrorHandling(t *testing.T) {
 	mux := http.NewServeMux()
 
-	tmuxHandler := NewTmuxHandler()
+	tmuxHandler := NewTmuxHandler(nil)
 	tmuxHandler.RegisterRoutes(mux)
 
 	// Test invalid session name for delete

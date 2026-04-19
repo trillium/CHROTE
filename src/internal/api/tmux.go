@@ -18,8 +18,9 @@ import (
 
 // TmuxHandler handles tmux-related API endpoints
 type TmuxHandler struct {
-	cache      *sessionsCache
-	colorRegex *regexp.Regexp
+	cache        *sessionsCache
+	colorRegex   *regexp.Regexp
+	extraSockets []string // additional tmux -L sockets to scan
 }
 
 type sessionsCache struct {
@@ -68,13 +69,15 @@ type AppearanceRequest struct {
 	ModeStyleFg        string `json:"modeStyleFg"`
 }
 
-// NewTmuxHandler creates a new TmuxHandler
-func NewTmuxHandler() *TmuxHandler {
+// NewTmuxHandler creates a new TmuxHandler.
+// extraSockets is a list of additional tmux socket names (for tmux -L) to scan.
+func NewTmuxHandler(extraSockets []string) *TmuxHandler {
 	return &TmuxHandler{
 		cache: &sessionsCache{
 			ttl: time.Second,
 		},
-		colorRegex: regexp.MustCompile(`^#[0-9A-Fa-f]{3,6}$|^[a-zA-Z]+$|^default$`),
+		colorRegex:   regexp.MustCompile(`^#[0-9A-Fa-f]{3,6}$|^[a-zA-Z]+$|^default$`),
+		extraSockets: extraSockets,
 	}
 }
 
@@ -91,10 +94,20 @@ func (h *TmuxHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/tmux/sessions/{name}/scroll", h.Scroll)
 }
 
-// runTmux executes a tmux command with proper environment
+// runTmux executes a tmux command against the default server.
 func (h *TmuxHandler) runTmux(args ...string) (string, error) {
+	return h.runTmuxOnSocket("", args...)
+}
+
+// runTmuxOnSocket executes a tmux command, optionally targeting a named socket.
+// When socket is non-empty, "-L <socket>" is prepended to the args.
+func (h *TmuxHandler) runTmuxOnSocket(socket string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+
+	if socket != "" {
+		args = append([]string{"-L", socket}, args...)
+	}
 
 	cmd := exec.CommandContext(ctx, "tmux", args...)
 	cmd.Env = core.GetTmuxEnv()
@@ -109,6 +122,12 @@ func (h *TmuxHandler) runTmux(args ...string) (string, error) {
 	return string(output), nil
 }
 
+// socketFromRequest reads the optional "socket" query parameter from a request.
+// Returns empty string for the default tmux server.
+func socketFromRequest(r *http.Request) string {
+	return r.URL.Query().Get("socket")
+}
+
 // ListSessions handles GET /api/tmux/sessions
 func (h *TmuxHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	// Check cache
@@ -121,55 +140,34 @@ func (h *TmuxHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	h.cache.mu.RUnlock()
 
-	// Fetch sessions
-	output, err := h.runTmux("list-sessions", "-F", "#{session_name}:#{session_windows}:#{session_attached}")
-
 	response := &SessionsResponse{
 		Sessions:  []core.Session{},
 		Grouped:   make(map[string][]core.Session),
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	if err != nil {
-		// Check for "no server running" type errors
-		errStr := err.Error()
-		noServerErrors := []string{"no server running", "No such file or directory", "error connecting"}
-		isNoServer := false
-		for _, msg := range noServerErrors {
-			if strings.Contains(errStr, msg) {
-				isNoServer = true
-				break
-			}
-		}
-		if !isNoServer {
-			response.Error = errStr
-		}
-	} else {
-		lines := strings.Split(strings.TrimSpace(output), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line == "" {
-				continue
-			}
-			parts := strings.Split(line, ":")
-			if len(parts) >= 3 {
-				windows, _ := strconv.Atoi(parts[1])
-				if windows == 0 {
-					windows = 1
-				}
-				session := core.Session{
-					Name:     parts[0],
-					Windows:  windows,
-					Attached: parts[2] == "1",
-					Group:    core.CategorizeSession(parts[0]),
-				}
-				response.Sessions = append(response.Sessions, session)
-			}
-		}
-
-		core.SortSessions(response.Sessions)
-		response.Grouped = core.GroupSessions(response.Sessions)
+	// Fetch from default server
+	sessions, err := h.listSessionsOnSocket("")
+	if err != nil && !isNoServerError(err) {
+		response.Error = err.Error()
 	}
+	response.Sessions = append(response.Sessions, sessions...)
+
+	// Fetch from extra sockets (silently skip unavailable ones)
+	for _, socket := range h.extraSockets {
+		extra, err := h.listSessionsOnSocket(socket)
+		if err != nil {
+			// Only log real errors, not "no server running"
+			if !isNoServerError(err) {
+				fmt.Printf("tmux socket %q: %v\n", socket, err)
+			}
+			continue
+		}
+		response.Sessions = append(response.Sessions, extra...)
+	}
+
+	core.SortSessions(response.Sessions)
+	response.Grouped = core.GroupSessions(response.Sessions)
 
 	// Update cache
 	h.cache.mu.Lock()
@@ -178,6 +176,49 @@ func (h *TmuxHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	h.cache.mu.Unlock()
 
 	core.WriteJSON(w, http.StatusOK, response)
+}
+
+// listSessionsOnSocket queries a single tmux server for sessions.
+func (h *TmuxHandler) listSessionsOnSocket(socket string) ([]core.Session, error) {
+	output, err := h.runTmuxOnSocket(socket, "list-sessions", "-F", "#{session_name}:#{session_windows}:#{session_attached}")
+	if err != nil {
+		return nil, err
+	}
+
+	var sessions []core.Session
+	lines := strings.Split(strings.TrimSpace(output), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.Split(line, ":")
+		if len(parts) >= 3 {
+			windows, _ := strconv.Atoi(parts[1])
+			if windows == 0 {
+				windows = 1
+			}
+			sessions = append(sessions, core.Session{
+				Name:     parts[0],
+				Windows:  windows,
+				Attached: parts[2] == "1",
+				Group:    core.CategorizeSession(parts[0]),
+				Socket:   socket,
+			})
+		}
+	}
+	return sessions, nil
+}
+
+// isNoServerError returns true if the error indicates no tmux server is running.
+func isNoServerError(err error) bool {
+	errStr := err.Error()
+	for _, msg := range []string{"no server running", "No such file or directory", "error connecting"} {
+		if strings.Contains(errStr, msg) {
+			return true
+		}
+	}
+	return false
 }
 
 // invalidateCache clears the sessions cache
@@ -229,6 +270,7 @@ func (h *TmuxHandler) CreateSession(w http.ResponseWriter, r *http.Request) {
 // DeleteSession handles DELETE /api/tmux/sessions/{name}
 func (h *TmuxHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 	sessionName := r.PathValue("name")
+	socket := socketFromRequest(r)
 
 	valid, errMsg := core.ValidateSessionName(sessionName, "session name")
 	if !valid {
@@ -236,7 +278,7 @@ func (h *TmuxHandler) DeleteSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.runTmux("kill-session", "-t", sessionName)
+	_, err := h.runTmuxOnSocket(socket, "kill-session", "-t", sessionName)
 	if err != nil {
 		core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
 		return
@@ -325,6 +367,7 @@ func (h *TmuxHandler) DeleteAllSessions(w http.ResponseWriter, r *http.Request) 
 // RenameSession handles PATCH /api/tmux/sessions/{name}
 func (h *TmuxHandler) RenameSession(w http.ResponseWriter, r *http.Request) {
 	oldName := r.PathValue("name")
+	socket := socketFromRequest(r)
 
 	valid, errMsg := core.ValidateSessionName(oldName, "current session name")
 	if !valid {
@@ -344,7 +387,7 @@ func (h *TmuxHandler) RenameSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.runTmux("rename-session", "-t", oldName, req.NewName)
+	_, err := h.runTmuxOnSocket(socket, "rename-session", "-t", oldName, req.NewName)
 	if err != nil {
 		core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
 		return
@@ -422,6 +465,7 @@ func (h *TmuxHandler) ApplyAppearance(w http.ResponseWriter, r *http.Request) {
 // Newlines in the text are sent as Enter keys.
 func (h *TmuxHandler) SendKeys(w http.ResponseWriter, r *http.Request) {
 	sessionName := r.PathValue("name")
+	socket := socketFromRequest(r)
 
 	valid, errMsg := core.ValidateSessionName(sessionName, "session name")
 	if !valid {
@@ -446,14 +490,14 @@ func (h *TmuxHandler) SendKeys(w http.ResponseWriter, r *http.Request) {
 	lines := strings.Split(req.Text, "\n")
 	for i, line := range lines {
 		if line != "" {
-			if _, err := h.runTmux("send-keys", "-t", sessionName, "-l", "--", line); err != nil {
+			if _, err := h.runTmuxOnSocket(socket, "send-keys", "-t", sessionName, "-l", "--", line); err != nil {
 				core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
 				return
 			}
 		}
 		// Send Enter after each line except the last
 		if i < len(lines)-1 {
-			if _, err := h.runTmux("send-keys", "-t", sessionName, "Enter"); err != nil {
+			if _, err := h.runTmuxOnSocket(socket, "send-keys", "-t", sessionName, "Enter"); err != nil {
 				core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
 				return
 			}
@@ -461,7 +505,7 @@ func (h *TmuxHandler) SendKeys(w http.ResponseWriter, r *http.Request) {
 	}
 	// If the text ended with \n (e.g. trigger word), send a final Enter to submit
 	if trailingNewline {
-		if _, err := h.runTmux("send-keys", "-t", sessionName, "Enter"); err != nil {
+		if _, err := h.runTmuxOnSocket(socket, "send-keys", "-t", sessionName, "Enter"); err != nil {
 			core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
 			return
 		}
@@ -479,6 +523,7 @@ func (h *TmuxHandler) SendKeys(w http.ResponseWriter, r *http.Request) {
 // Sends a tmux key name (e.g. Escape, Tab, C-c, Up) without literal mode.
 func (h *TmuxHandler) SendRawKey(w http.ResponseWriter, r *http.Request) {
 	sessionName := r.PathValue("name")
+	socket := socketFromRequest(r)
 
 	valid, errMsg := core.ValidateSessionName(sessionName, "session name")
 	if !valid {
@@ -499,7 +544,7 @@ func (h *TmuxHandler) SendRawKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := h.runTmux("send-keys", "-t", sessionName, req.Keys); err != nil {
+	if _, err := h.runTmuxOnSocket(socket, "send-keys", "-t", sessionName, req.Keys); err != nil {
 		core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
 		return
 	}
@@ -515,6 +560,7 @@ func (h *TmuxHandler) SendRawKey(w http.ResponseWriter, r *http.Request) {
 // Enters copy-mode and scrolls up/down by page, half-page, or line.
 func (h *TmuxHandler) Scroll(w http.ResponseWriter, r *http.Request) {
 	sessionName := r.PathValue("name")
+	socket := socketFromRequest(r)
 
 	valid, errMsg := core.ValidateSessionName(sessionName, "session name")
 	if !valid {
@@ -539,13 +585,13 @@ func (h *TmuxHandler) Scroll(w http.ResponseWriter, r *http.Request) {
 
 	// Exit copy-mode
 	if req.Direction == "exit" {
-		h.runTmux("send-keys", "-t", sessionName, "q")
+		h.runTmuxOnSocket(socket, "send-keys", "-t", sessionName, "q")
 		core.WriteJSON(w, http.StatusOK, map[string]interface{}{"success": true})
 		return
 	}
 
 	// Enter copy-mode (idempotent — no-op if already in copy-mode)
-	h.runTmux("copy-mode", "-t", sessionName)
+	h.runTmuxOnSocket(socket, "copy-mode", "-t", sessionName)
 
 	// Map direction+amount to tmux copy-mode command
 	var cmd string
@@ -570,7 +616,7 @@ func (h *TmuxHandler) Scroll(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if _, err := h.runTmux("send-keys", "-t", sessionName, "-X", cmd); err != nil {
+	if _, err := h.runTmuxOnSocket(socket, "send-keys", "-t", sessionName, "-X", cmd); err != nil {
 		core.WriteError(w, http.StatusInternalServerError, "TMUX_ERROR", err.Error())
 		return
 	}
