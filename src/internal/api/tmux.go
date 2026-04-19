@@ -153,11 +153,18 @@ func (h *TmuxHandler) ListSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	response.Sessions = append(response.Sessions, sessions...)
 
-	// Fetch from extra sockets (silently skip unavailable ones)
-	for _, socket := range h.extraSockets {
+	// Auto-discover additional tmux sockets in the socket directory,
+	// merged with any explicitly configured extra sockets.
+	discovered := core.DiscoverTmuxSockets()
+	seen := make(map[string]bool)
+	allSockets := append(h.extraSockets, discovered...)
+	for _, socket := range allSockets {
+		if seen[socket] {
+			continue
+		}
+		seen[socket] = true
 		extra, err := h.listSessionsOnSocket(socket)
 		if err != nil {
-			// Only log real errors, not "no server running"
 			if !isNoServerError(err) {
 				fmt.Printf("tmux socket %q: %v\n", socket, err)
 			}

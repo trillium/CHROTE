@@ -102,6 +102,27 @@ func GetTmuxTmpdir() string {
 	return "/run/tmux/chrote"
 }
 
+// DiscoverTmuxSockets scans the tmux socket directory and returns the names
+// of all non-default sockets found. These correspond to tmux servers started
+// with "tmux -L <name>". Returns nil (not an error) if the directory doesn't
+// exist or can't be read.
+func DiscoverTmuxSockets() []string {
+	tmpdir := GetTmuxTmpdir()
+	entries, err := os.ReadDir(tmpdir)
+	if err != nil {
+		return nil
+	}
+	var sockets []string
+	for _, e := range entries {
+		name := e.Name()
+		if name == "default" || e.IsDir() {
+			continue
+		}
+		sockets = append(sockets, name)
+	}
+	return sockets
+}
+
 // GetTmuxEnv returns the environment for tmux commands
 func GetTmuxEnv() []string {
 	env := os.Environ()
