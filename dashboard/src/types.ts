@@ -76,6 +76,7 @@ export interface TmuxSession {
   windows: number
   attached: boolean
   group: string
+  socket?: string // tmux socket name; empty/undefined = default server
 }
 
 export interface SessionsResponse {
@@ -212,4 +213,13 @@ export function getGroupPriority(group: string): number {
   if (GROUP_CONFIG[group]) return GROUP_CONFIG[group].priority
   if (group.startsWith('gt-')) return 3 // Rigs after main
   return 99
+}
+
+// socketQueryParam returns "?socket=<name>" if the session has a socket, else "".
+export function socketQueryParam(sessionName: string, sessions: TmuxSession[]): string {
+  const session = sessions.find(s => s.name === sessionName)
+  if (session?.socket) {
+    return `?socket=${encodeURIComponent(session.socket)}`
+  }
+  return ''
 }

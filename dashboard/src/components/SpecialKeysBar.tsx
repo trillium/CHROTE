@@ -1,17 +1,21 @@
 import { useState } from 'react'
+import { useSession } from '../context/SessionContext'
+import { socketQueryParam } from '../types'
 
 interface SpecialKeysBarProps {
   activeSession: string | null
 }
 
 function SpecialKeysBar({ activeSession }: SpecialKeysBarProps) {
+  const { sessions } = useSession()
   const [open, setOpen] = useState(false)
   const [ctrlActive, setCtrlActive] = useState(false)
 
   const sendKeys = async (keys: string) => {
     if (!activeSession) return
     try {
-      await fetch(`/api/tmux/sessions/${encodeURIComponent(activeSession)}/send-raw-key`, {
+      const sq = socketQueryParam(activeSession, sessions)
+      await fetch(`/api/tmux/sessions/${encodeURIComponent(activeSession)}/send-raw-key${sq}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ keys }),

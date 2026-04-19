@@ -1,12 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useSession } from '../context/SessionContext'
 import { useToast } from '../context/ToastContext'
+import { socketQueryParam } from '../types'
 
 const TRIGGER_RE = /\b(bravely|gravely)\b/i
 const TRIGGER_DEBOUNCE_MS = 600
 
 function ComposePanel() {
-  const { composeTarget, closeComposePanel } = useSession()
+  const { composeTarget, closeComposePanel, sessions } = useSession()
   const { addToast } = useToast()
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -42,8 +43,9 @@ function ComposePanel() {
 
     setSending(true)
     try {
+      const sq = socketQueryParam(composeTarget, sessions)
       const response = await fetch(
-        `/api/tmux/sessions/${encodeURIComponent(composeTarget)}/send-keys`,
+        `/api/tmux/sessions/${encodeURIComponent(composeTarget)}/send-keys${sq}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

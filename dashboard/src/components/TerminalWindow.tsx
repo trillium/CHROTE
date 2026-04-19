@@ -3,6 +3,7 @@ import { useDroppable, useDraggable } from '@dnd-kit/core'
 import { useSession } from '../context/SessionContext'
 import { useToast } from '../context/ToastContext'
 import { useIframePool } from './IframePool'
+import { socketQueryParam } from '../types'
 import { WINDOW_COLORS } from '../types'
 import type { TerminalWindow as TerminalWindowType, WorkspaceId } from '../types'
 
@@ -133,12 +134,14 @@ function SessionTag({ sessionName, isActive, workspaceId, windowId, onRemove, on
 
 // Floating scroll buttons - uses tmux copy-mode via API
 function ScrollButtons({ activeSession }: { activeSession: string | null }) {
+  const { sessions } = useSession()
   const [inScrollMode, setInScrollMode] = useState(false)
 
   const scroll = async (direction: 'up' | 'down' | 'exit', amount = 'page') => {
     if (!activeSession) return
     try {
-      await fetch(`/api/tmux/sessions/${encodeURIComponent(activeSession)}/scroll`, {
+      const sq = socketQueryParam(activeSession, sessions)
+      await fetch(`/api/tmux/sessions/${encodeURIComponent(activeSession)}/scroll${sq}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ direction, amount }),

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react'
 import type { DashboardContextType, TmuxSession, TerminalWindow, SessionsResponse, UserSettings, TmuxAppearance, WorkspaceId, TerminalWorkspace, LayoutPreset } from '../types'
-import { DEFAULT_SETTINGS, DEFAULT_TMUX_APPEARANCE, MAX_PRESETS } from '../types'
+import { DEFAULT_SETTINGS, DEFAULT_TMUX_APPEARANCE, MAX_PRESETS, socketQueryParam } from '../types'
 import { useToast } from './ToastContext'
 
 // Apply tmux appearance settings via API (hot-reload)
@@ -530,7 +530,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const deleteSession = useCallback(async (sessionName: string) => {
     try {
-      const response = await fetch(`/api/tmux/sessions/${encodeURIComponent(sessionName)}`, {
+      const sq = socketQueryParam(sessionName, sessions)
+      const response = await fetch(`/api/tmux/sessions/${encodeURIComponent(sessionName)}${sq}`, {
         method: 'DELETE',
       })
       if (response.ok) {
@@ -545,11 +546,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       console.error('Failed to delete session:', e)
       addToast(`Failed to delete session`, 'error')
     }
-  }, [refreshSessions, addToast])
+  }, [refreshSessions, addToast, sessions])
 
   const renameSession = useCallback(async (oldName: string, newName: string): Promise<boolean> => {
     try {
-      const response = await fetch(`/api/tmux/sessions/${encodeURIComponent(oldName)}`, {
+      const sq = socketQueryParam(oldName, sessions)
+      const response = await fetch(`/api/tmux/sessions/${encodeURIComponent(oldName)}${sq}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ newName }),
@@ -585,7 +587,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       addToast(`Failed to rename session`, 'error')
       return false
     }
-  }, [refreshSessions, addToast])
+  }, [refreshSessions, addToast, sessions])
 
   // Layout Preset Actions
   const saveCurrentLayout = useCallback((name: string): boolean => {

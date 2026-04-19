@@ -1,17 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useToast } from '../context/ToastContext'
 import { ToastContainer } from './ToastNotification'
+import { socketQueryParam, TmuxSession } from '../types'
 
 const TRIGGER_RE = /\b(bravely|gravely)\b/i
 const TRIGGER_DEBOUNCE_MS = 600
 
-interface Session {
-  name: string
-}
-
 function ComposePage() {
   const { addToast } = useToast()
-  const [sessions, setSessions] = useState<Session[]>([])
+  const [sessions, setSessions] = useState<TmuxSession[]>([])
   const [target, setTarget] = useState('')
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
@@ -25,7 +22,7 @@ function ComposePage() {
       .then(data => {
         setSessions(data.sessions ?? [])
         // Default to hq-mayor if present, else first session
-        const def = (data.sessions ?? []).find((s: Session) => s.name === 'hq-mayor') ?? data.sessions?.[0]
+        const def = (data.sessions ?? []).find((s: TmuxSession) => s.name === 'hq-mayor') ?? data.sessions?.[0]
         if (def) setTarget(def.name)
       })
       .catch(() => {})
@@ -41,8 +38,9 @@ function ComposePage() {
 
     setSending(true)
     try {
+      const sq = socketQueryParam(target, sessions)
       const res = await fetch(
-        `/api/tmux/sessions/${encodeURIComponent(target)}/send-keys`,
+        `/api/tmux/sessions/${encodeURIComponent(target)}/send-keys${sq}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
